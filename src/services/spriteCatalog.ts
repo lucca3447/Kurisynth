@@ -58,6 +58,21 @@ export const KURISU_SPRITES: Record<Emotion, SpriteFrames> = {
     talk: '/assets/sprites/kurisu/CRS_JLD_40000b01.png',
     blink: '/assets/sprites/kurisu/CRS_JLD_40000b02.png',
   },
+  sad: {
+    idle: '/assets/sprites/kurisu/CRS_JLD_40000900.png',
+    talk: '/assets/sprites/kurisu/CRS_JLD_40000901.png',
+    blink: '/assets/sprites/kurisu/CRS_JLD_40000902.png',
+  },
+  puzzled: {
+    idle: '/assets/sprites/kurisu/CRS_JLD_40000a00.png',
+    talk: '/assets/sprites/kurisu/CRS_JLD_40000a01.png',
+    blink: '/assets/sprites/kurisu/CRS_JLD_40000a02.png',
+  },
+  desperate: {
+    idle: '/assets/sprites/kurisu/CRS_JLD_40000c00.png',
+    talk: '/assets/sprites/kurisu/CRS_JLD_40000c01.png',
+    blink: '/assets/sprites/kurisu/CRS_JLD_40000c02.png',
+  },
 };
 
 /**

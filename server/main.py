@@ -211,7 +211,11 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
         clean = re.sub(r"<!--remember:.*?-->", "", clean, flags=re.IGNORECASE)
 
     # 2. Parse emotion tag
-    valid_emotions = ["neutral", "smile", "happy", "serious", "annoyed", "surprised", "tsundere", "thinking", "smug", "flustered"]
+    valid_emotions = [
+        "neutral", "smile", "happy", "serious", "annoyed",
+        "surprised", "tsundere", "thinking", "smug", "flustered",
+        "sad", "puzzled", "desperate"
+    ]
     emotion = "neutral"
     emotion_match = re.search(r"<!--emotion:([a-z]+)-->", clean, re.IGNORECASE)
     if emotion_match:
@@ -230,6 +234,12 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
             emotion = "thinking"
         elif any(w in lower for w in ["obrigada", "hehe", "fico feliz"]):
             emotion = "smile"
+        elif any(w in lower for w in ["triste", "sinto muito", "lágrimas", "desculpe", "mayuri"]):
+            emotion = "sad"
+        elif any(w in lower for w in ["estranho", "como pode", "não faz sentido", "curioso", "inexplicável"]):
+            emotion = "puzzled"
+        elif any(w in lower for w in ["por favor", "não desista", "socorro", "urgente", "precisamos"]):
+            emotion = "desperate"
 
     return clean.strip(), emotion, learned_info
 

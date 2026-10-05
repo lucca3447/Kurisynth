@@ -21,6 +21,9 @@ const EMOTION_LABELS: Record<Emotion, { label: string; color: string }> = {
   thinking: { label: 'Hypothesizing / Deep Thought', color: 'text-[#38bdf8] border-[#0ea5e9]/40' },
   smug: { label: 'Smug / Confident', color: 'text-[#facc15] border-[#eab308]/40' },
   flustered: { label: 'Embarrassed / Defensive', color: 'text-[#fb7185] border-[#f43f5e]/40' },
+  sad: { label: 'Melancholic / Vulnerable', color: 'text-[#93c5fd] border-[#3b82f6]/40' },
+  puzzled: { label: 'Puzzled / Skeptical', color: 'text-[#c084fc] border-[#a855f7]/40' },
+  desperate: { label: 'Emphatic / Intense', color: 'text-[#f87171] border-[#ef4444]/50' },
 };
 
 const SUGGESTED_TOPICS = [
