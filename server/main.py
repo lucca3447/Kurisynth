@@ -185,11 +185,8 @@ async def gemini_request(client: httpx.AsyncClient, method: str, path: str, api_
 
     return res.json()
 
-async def resolve_model(client: httpx.AsyncClient, api_key: str, force: bool = False) -> str:
+async def get_candidate_models(client: httpx.AsyncClient, api_key: str, force: bool = False) -> List[str]:
     fp = api_key[-8:]
-    if not force and fp in _model_cache:
-        return _model_cache[fp]
-
     data = await gemini_request(client, "GET", "models?pageSize=1000", api_key)
     usable = [
         m["name"].replace("models/", "")
@@ -202,23 +199,23 @@ async def resolve_model(client: httpx.AsyncClient, api_key: str, force: bool = F
     if not usable:
         raise GeminiError(404, "Nenhum modelo de chat disponível para esta chave.")
 
-    pick = None
+    candidates: List[str] = []
+    if not force and fp in _model_cache and _model_cache[fp] in usable:
+        candidates.append(_model_cache[fp])
+
     for pref in PREFERRED_MODELS:
-        if pref in usable:
-            pick = pref
-            break
+        if pref in usable and pref not in candidates:
+            candidates.append(pref)
 
-    if not pick:
-        flash_models = [m for m in usable if "flash" in m]
-        if flash_models:
-            flash_models.sort(key=_score_model, reverse=True)
-            pick = flash_models[0]
-        else:
-            usable.sort(key=_score_model, reverse=True)
-            pick = usable[0]
+    flash_models = [m for m in usable if "flash" in m and m not in candidates]
+    flash_models.sort(key=_score_model, reverse=True)
+    candidates.extend(flash_models)
 
-    _model_cache[fp] = pick
-    return pick
+    remaining = [m for m in usable if m not in candidates]
+    remaining.sort(key=_score_model, reverse=True)
+    candidates.extend(remaining)
+
+    return candidates
 
 def offline_simulator(text: str, persona: PersonaProfile, memories: List[MemoryItem]) -> tuple[str, str]:
     t = text.lower().strip()
@@ -314,15 +311,29 @@ async def chat(req: ChatRequest):
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            model = await resolve_model(client, api_key)
-            try:
-                data = await gemini_request(client, "POST", f"models/{model}:generateContent", api_key, payload)
-            except GeminiError as e:
-                if e.code != 404:
+            candidates = await get_candidate_models(client, api_key)
+            selected_model = candidates[0]
+            data = None
+            last_error = None
+
+            for candidate_model in candidates:
+                try:
+                    data = await gemini_request(client, "POST", f"models/{candidate_model}:generateContent", api_key, payload)
+                    selected_model = candidate_model
+                    _model_cache[api_key[-8:]] = candidate_model
+                    last_error = None
+                    break
+                except GeminiError as e:
+                    last_error = e
+                    if e.code in (503, 429, 404):
+                        print(f"[Amadeus Backend] Model {candidate_model} returned {e.code}, trying next candidate...")
+                        continue
                     raise
-                # Model retired since it was cached: pick again and retry once
-                model = await resolve_model(client, api_key, force=True)
-                data = await gemini_request(client, "POST", f"models/{model}:generateContent", api_key, payload)
+
+            if last_error and not data:
+                raise last_error
+
+            model = selected_model
 
         candidate = (data.get("candidates") or [{}])[0]
         parts = (candidate.get("content") or {}).get("parts") or []

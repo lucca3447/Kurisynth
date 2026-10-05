@@ -48,12 +48,14 @@ export class GeminiError extends Error {
       case 404:
         return `Modelo não encontrado: ${this.apiMessage}`;
       case 429:
-        return 'Cota gratuita esgotada por agora. Aguarde um minuto e tente de novo.';
+        return 'Cota temporária atingida. Aguarde alguns instantes.';
+      case 503:
+        return 'Os servidores do Google estão temporariamente sobrecarregados neste modelo (Erro 503).';
       case 0:
         return this.apiMessage;
       default:
         return this.code >= 500
-          ? 'Os servidores da Google estão instáveis no momento. Tente novamente em instantes.'
+          ? `Servidores do Google temporariamente indisponíveis (Código ${this.code}).`
           : this.apiMessage;
     }
   }
@@ -102,15 +104,9 @@ export class AIService {
   }
 
   /**
-   * Picks a model the key can actually use, via ListModels. Cached per key.
+   * Returns a ranked list of usable chat models for this API key.
    */
-  static async resolveModel(apiKey: string, force = false): Promise<string> {
-    const fp = keyFingerprint(apiKey);
-    if (!force && localStorage.getItem(MODEL_CACHE_FINGERPRINT) === fp) {
-      const cached = localStorage.getItem(MODEL_CACHE_KEY);
-      if (cached) return cached;
-    }
-
+  static async getCandidateModels(apiKey: string, force = false): Promise<string[]> {
     const data = await geminiFetch('models?pageSize=1000', apiKey);
     const usable: string[] = (data.models ?? [])
       .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
@@ -122,29 +118,69 @@ export class AIService {
       throw new GeminiError(404, 'Nenhum modelo de chat disponível para esta chave.');
     }
 
-    const pick =
-      PREFERRED_MODELS.find((p) => usable.includes(p)) ??
-      usable.filter((n) => n.includes('flash')).sort((a, b) => scoreModel(b) - scoreModel(a))[0] ??
-      usable.sort((a, b) => scoreModel(b) - scoreModel(a))[0];
+    // Rank candidate models: preferred first, then other flashes, then highest scored
+    const candidates: string[] = [];
 
-    localStorage.setItem(MODEL_CACHE_KEY, pick);
-    localStorage.setItem(MODEL_CACHE_FINGERPRINT, fp);
-    return pick;
+    // Check cached working model first
+    const fp = keyFingerprint(apiKey);
+    const cached = localStorage.getItem(MODEL_CACHE_KEY);
+    if (!force && cached && localStorage.getItem(MODEL_CACHE_FINGERPRINT) === fp && usable.includes(cached)) {
+      candidates.push(cached);
+    }
+
+    PREFERRED_MODELS.forEach((p) => {
+      if (usable.includes(p) && !candidates.includes(p)) candidates.push(p);
+    });
+
+    const otherFlashes = usable
+      .filter((n) => n.includes('flash') && !candidates.includes(n))
+      .sort((a, b) => scoreModel(b) - scoreModel(a));
+    candidates.push(...otherFlashes);
+
+    const remaining = usable
+      .filter((n) => !candidates.includes(n))
+      .sort((a, b) => scoreModel(b) - scoreModel(a));
+    candidates.push(...remaining);
+
+    return candidates;
   }
 
   /**
-   * Used by the Settings "Testar Conexão" button.
+   * Used by the Settings "Testar Conexão" button with automatic candidate fallback on 503/429/404.
    */
   static async testConnection(apiKey: string): Promise<{ ok: boolean; model?: string; message: string }> {
     const key = apiKey.trim();
     if (!key) return { ok: false, message: 'Cole uma chave antes de testar.' };
+
     try {
-      const model = await this.resolveModel(key, true);
-      await geminiFetch(`models/${model}:generateContent`, key, {
-        contents: [{ role: 'user', parts: [{ text: 'Responda apenas: ok' }] }],
-        generationConfig: { maxOutputTokens: 1024 },
-      });
-      return { ok: true, model, message: `Conectado: ${model}` };
+      const candidates = await this.getCandidateModels(key, true);
+      let lastErr: any = null;
+
+      for (const model of candidates) {
+        try {
+          await geminiFetch(`models/${model}:generateContent`, key, {
+            contents: [{ role: 'user', parts: [{ text: 'Responda apenas: ok' }] }],
+            generationConfig: { maxOutputTokens: 100 },
+          });
+
+          // Success: cache this model as the active working model
+          localStorage.setItem(MODEL_CACHE_KEY, model);
+          localStorage.setItem(MODEL_CACHE_FINGERPRINT, keyFingerprint(key));
+          return { ok: true, model, message: `Conectado: ${model}` };
+        } catch (err: any) {
+          lastErr = err;
+          // If 503 (Overloaded), 429 (Rate limit) or 404 (Not found), try next model candidate!
+          if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404)) {
+            console.warn(`[Amadeus] Test model ${model} returned ${err.code}, testing next candidate...`);
+            continue;
+          }
+          // For other errors (e.g. 400 Invalid Key, 403 Forbidden), break early
+          break;
+        }
+      }
+
+      const message = lastErr instanceof GeminiError ? `[${lastErr.code || 'REDE'}] ${lastErr.friendly}` : String(lastErr);
+      return { ok: false, message };
     } catch (err) {
       const message = err instanceof GeminiError ? `[${err.code || 'REDE'}] ${err.friendly}` : String(err);
       return { ok: false, message };
@@ -230,19 +266,40 @@ export class AIService {
       },
     };
 
-    let model = await this.resolveModel(apiKey);
-    let data: any;
-    try {
-      data = await geminiFetch(`models/${model}:generateContent`, apiKey, body);
-    } catch (err) {
-      // Model retired since it was cached: pick a new one and retry once
-      if (err instanceof GeminiError && err.code === 404) {
-        model = await this.resolveModel(apiKey, true);
-        data = await geminiFetch(`models/${model}:generateContent`, apiKey, body);
-      } else {
+    const candidates = await this.getCandidateModels(apiKey);
+    let selectedModel = candidates[0];
+    let data: any = null;
+    let lastError: any = null;
+
+    for (const candidateModel of candidates) {
+      try {
+        data = await geminiFetch(`models/${candidateModel}:generateContent`, apiKey, body);
+        selectedModel = candidateModel;
+        lastError = null;
+
+        // Remember this successful model
+        localStorage.setItem(MODEL_CACHE_KEY, candidateModel);
+        localStorage.setItem(MODEL_CACHE_FINGERPRINT, keyFingerprint(apiKey));
+        break;
+      } catch (err: any) {
+        lastError = err;
+        // If 503 (Overloaded) or 429 (Rate limit) or 404 (Not found): fallback to next model
+        if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404)) {
+          console.warn(`[Amadeus] Model ${candidateModel} returned ${err.code} (${err.apiMessage}). Trying next candidate...`);
+          // Brief pause before trying next candidate
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
+        }
+        // Fatal error (like 400 Invalid Key), rethrow immediately
         throw err;
       }
     }
+
+    if (lastError && !data) {
+      throw lastError;
+    }
+
+    const model = selectedModel;
 
     const candidate = data.candidates?.[0];
     const text: string = (candidate?.content?.parts ?? [])
