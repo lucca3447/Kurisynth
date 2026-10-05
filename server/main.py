@@ -386,27 +386,53 @@ async def chat(req: ChatRequest):
                 })
             messages.append({"role": "user", "content": req.message})
 
+            openrouter_candidates = [
+                "google/gemma-4-31b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "meta-llama/llama-3.3-70b-instruct:free",
+            ]
+
+            last_or_err = None
             async with httpx.AsyncClient(timeout=35.0) as client:
-                res = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:5173",
-                        "X-Title": "Amadeus System"
-                    },
-                    json={
-                        "model": "meta-llama/llama-3.3-70b-instruct:free",
-                        "messages": messages,
-                        "temperature": 0.85,
-                        "max_tokens": 1024
-                    }
-                )
-                if res.status_code != 200:
-                    raise GeminiError(res.status_code, res.text)
-                data = res.json()
-                raw_reply = data["choices"][0]["message"]["content"]
-                used_model = "llama-3.3-70b (OpenRouter)"
+                for candidate_or in openrouter_candidates:
+                    try:
+                        res = await client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                                "HTTP-Referer": "http://localhost:5173",
+                                "X-Title": "Amadeus System"
+                            },
+                            json={
+                                "model": candidate_or,
+                                "messages": messages,
+                                "temperature": 0.85,
+                                "max_tokens": 1024
+                            }
+                        )
+                        if res.status_code != 200:
+                            err_body = res.text
+                            if res.status_code == 404 or "unavailable for free" in err_body.lower():
+                                print(f"[Amadeus Core] OpenRouter model {candidate_or} unavailable for free, trying next...")
+                                continue
+                            raise GeminiError(res.status_code, err_body)
+
+                        data = res.json()
+                        raw_reply = data["choices"][0]["message"]["content"]
+                        used_model = f"{candidate_or.replace(':free', '')} (OpenRouter)"
+                        last_or_err = None
+                        break
+                    except GeminiError as e:
+                        last_or_err = e
+                        if e.code == 404:
+                            continue
+                        raise
+
+            if last_or_err and not raw_reply:
+                raise last_or_err
 
         # --- B. Google Gemini Branch ---
         else:

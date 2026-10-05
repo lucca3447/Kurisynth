@@ -179,32 +179,54 @@ export class AIService {
 
     // Check if OpenRouter key
     if (isOpenRouterKey(key)) {
-      try {
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-            'HTTP-Referer': 'http://localhost:5173',
-            'X-Title': 'Amadeus System',
-          },
-          body: JSON.stringify({
-            model: 'meta-llama/llama-3.3-70b-instruct:free',
-            messages: [{ role: 'user', content: 'ping' }],
-            max_tokens: 10,
-          }),
-        });
+      const candidates = [
+        'google/gemma-4-31b-it:free',
+        'google/gemma-4-26b-a4b-it:free',
+        'nvidia/nemotron-3-super-120b-a12b:free',
+        'nvidia/nemotron-3.5-lightning:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+      ];
+      let lastErr: any = null;
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new GeminiError(res.status, errData?.error?.message || res.statusText || 'Erro no OpenRouter');
+      for (const model of candidates) {
+        try {
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${key}`,
+              'HTTP-Referer': 'http://localhost:5173',
+              'X-Title': 'Amadeus System',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 10,
+            }),
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const msg = errData?.error?.message || res.statusText || 'Erro no OpenRouter';
+            if (res.status === 404 || msg.toLowerCase().includes('unavailable for free')) {
+              console.warn(`[Amadeus] OpenRouter model ${model} unavailable for free, testing next...`);
+              continue;
+            }
+            throw new GeminiError(res.status, msg);
+          }
+
+          localStorage.setItem('amadeus_openrouter_model', model);
+          const cleanName = model.replace(':free', '');
+          return { ok: true, model: `${cleanName} (OpenRouter)`, message: `Conectado ao OpenRouter (${cleanName})!` };
+        } catch (err: any) {
+          lastErr = err;
+          if (err instanceof GeminiError && err.code === 404) continue;
+          break;
         }
-
-        return { ok: true, model: 'llama-3.3-70b (OpenRouter Grátis)', message: 'Conectado ao OpenRouter (Llama 3.3 70B Gratuito)!' };
-      } catch (err: any) {
-        const message = err instanceof GeminiError ? `[${err.code || 'REDE'}] ${err.apiMessage}` : String(err);
-        return { ok: false, message };
       }
+
+      const message = lastErr instanceof GeminiError ? `[${lastErr.code || 'REDE'}] ${lastErr.apiMessage}` : String(lastErr);
+      return { ok: false, message };
     }
 
     try {
@@ -347,36 +369,64 @@ export class AIService {
       { role: 'user', content: userMessage },
     ];
 
-    const model = 'meta-llama/llama-3.3-70b-instruct:free';
+    const cachedModel = localStorage.getItem('amadeus_openrouter_model');
+    const candidates = [
+      ...(cachedModel ? [cachedModel] : []),
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+    ].filter((v, i, a) => a.indexOf(v) === i);
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'http://localhost:5173',
-        'X-Title': 'Amadeus System',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.85,
-        max_tokens: 1024,
-      }),
-    });
+    let lastErr: any = null;
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new GeminiError(res.status, errData?.error?.message || res.statusText || 'Erro OpenRouter');
+    for (const model of candidates) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'http://localhost:5173',
+            'X-Title': 'Amadeus System',
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.85,
+            max_tokens: 1024,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const msg = errData?.error?.message || res.statusText || 'Erro OpenRouter';
+          if (res.status === 404 || msg.toLowerCase().includes('unavailable for free')) {
+            console.warn(`[Amadeus] OpenRouter model ${model} returned ${res.status}, trying next candidate...`);
+            continue;
+          }
+          throw new GeminiError(res.status, msg);
+        }
+
+        const data = await res.json();
+        const raw = data.choices?.[0]?.message?.content || '';
+        if (!raw) {
+          throw new GeminiError(0, 'Resposta vazia recebida do OpenRouter.');
+        }
+
+        localStorage.setItem('amadeus_openrouter_model', model);
+        const cleanName = model.replace(':free', '');
+        return { ...this.parseResponseTags(raw), model: `${cleanName} (OpenRouter)` };
+      } catch (err: any) {
+        lastErr = err;
+        if (err instanceof GeminiError && err.code === 404) continue;
+        throw err;
+      }
     }
 
-    const data = await res.json();
-    const raw = data.choices?.[0]?.message?.content || '';
-    if (!raw) {
-      throw new GeminiError(0, 'Resposta vazia recebida do OpenRouter.');
-    }
-
-    return { ...this.parseResponseTags(raw), model: 'llama-3.3-70b (OpenRouter)' };
+    if (lastErr) throw lastErr;
+    throw new GeminiError(404, 'Nenhum modelo gratuito do OpenRouter respondeu.');
   }
 
   private static buildContents(history: ChatMessage[], userMessage: string) {
