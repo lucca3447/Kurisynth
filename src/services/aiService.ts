@@ -15,6 +15,10 @@ export function isOpenRouterKey(key: string): boolean {
   return key.trim().startsWith('sk-or-');
 }
 
+export function isGroqKey(key: string): boolean {
+  return key.trim().startsWith('gsk_');
+}
+
 const MODEL_CACHE_KEY = 'amadeus_model';
 const MODEL_CACHE_FINGERPRINT = 'amadeus_model_key_fp';
 const MAX_HISTORY_MESSAGES = 20;
@@ -46,10 +50,10 @@ export interface AIResult {
   sessionId?: string;
 }
 
-/** Error from the Gemini API, carrying the HTTP status (0 = network / empty response). */
+/** Error from the Gemini/Groq/OpenRouter API, carrying the HTTP status (0 = network / empty response). */
 export class GeminiError extends Error {
   constructor(public code: number, public apiMessage: string) {
-    super(`Gemini API error ${code}: ${apiMessage}`);
+    super(`API error ${code}: ${apiMessage}`);
   }
 
   /** Short, user-facing explanation in Portuguese */
@@ -57,22 +61,22 @@ export class GeminiError extends Error {
     switch (this.code) {
       case 400:
         return /api key/i.test(this.apiMessage)
-          ? 'Chave de API inválida. Gere uma nova no Google AI Studio e cole sem espaços.'
-          : `Requisição recusada pela Google: ${this.apiMessage}`;
+          ? 'Chave de API inválida. Verifique a chave inserida e cole sem espaços.'
+          : `Requisição recusada pelo provedor: ${this.apiMessage}`;
       case 401:
       case 403:
-        return 'A chave não tem permissão para usar a Gemini API (verifique se a API está ativada no seu projeto).';
+        return 'Chave de API sem permissão ou não autorizada. Verifique sua conta no provedor.';
       case 404:
         return `Modelo não encontrado: ${this.apiMessage}`;
       case 429:
-        return 'Cota temporária atingida. Aguarde alguns instantes.';
+        return 'Cota ou limite de requisições temporariamente atingido. Aguarde alguns instantes.';
       case 503:
-        return 'Os servidores do Google estão temporariamente sobrecarregados neste modelo (Erro 503).';
+        return 'Servidores temporariamente sobrecarregados (Erro 503).';
       case 0:
         return this.apiMessage;
       default:
         return this.code >= 500
-          ? `Servidores do Google temporariamente indisponíveis (Código ${this.code}).`
+          ? `Servidores temporariamente indisponíveis (Código ${this.code}).`
           : this.apiMessage;
     }
   }
@@ -176,6 +180,61 @@ export class AIService {
   static async testConnection(apiKey: string): Promise<{ ok: boolean; model?: string; message: string }> {
     const key = apiKey.trim();
     if (!key) return { ok: false, message: 'Cole uma chave antes de testar.' };
+
+    // Check if Groq key
+    if (isGroqKey(key)) {
+      const candidates = [
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+        'gemma2-9b-it',
+      ];
+      let lastErr: any = null;
+
+      for (const model of candidates) {
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 10,
+            }),
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const msg = errData?.error?.message || res.statusText || 'Erro no Groq';
+            const isRetryable =
+              res.status === 404 ||
+              res.status === 429 ||
+              res.status === 502 ||
+              res.status === 503 ||
+              msg.toLowerCase().includes('rate_limit') ||
+              msg.toLowerCase().includes('rate limit');
+
+            if (isRetryable) {
+              console.warn(`[Amadeus] Groq model ${model} returned ${res.status}, testing next...`);
+              continue;
+            }
+            throw new GeminiError(res.status, msg);
+          }
+
+          localStorage.setItem('amadeus_groq_model', model);
+          return { ok: true, model: `${model} (Groq LPU)`, message: `Conectado ao Groq Cloud (${model})!` };
+        } catch (err: any) {
+          lastErr = err;
+          if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
+          break;
+        }
+      }
+
+      const message = lastErr instanceof GeminiError ? `[${lastErr.code || 'REDE'}] ${lastErr.apiMessage}` : String(lastErr);
+      return { ok: false, message };
+    }
 
     // Check if OpenRouter key
     if (isOpenRouterKey(key)) {
@@ -311,7 +370,21 @@ export class AIService {
       return { ...offline, status: { kind: 'offline' }, isError: false };
     }
 
-    // 3. Browser-Mode: OpenRouter
+    // 3. Browser-Mode: Groq Cloud (Ultra-fast LPU)
+    if (isGroqKey(key)) {
+      try {
+        const { response, emotion, model, learnedMemory } = await this.queryGroq(userMessage, persona, recalledMemories, key, history);
+        return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
+      } catch (err) {
+        console.error('[Amadeus] Groq call failed:', err);
+        const message = err instanceof GeminiError
+          ? `[ERRO ${err.code || 'REDE'}] ${err.friendly}`
+          : `[ERRO] ${String(err)}`;
+        return { response: message, emotion: 'serious', status: { kind: 'error', message }, isError: true };
+      }
+    }
+
+    // 4. Browser-Mode: OpenRouter
     if (isOpenRouterKey(key)) {
       try {
         const { response, emotion, model, learnedMemory } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
@@ -325,7 +398,7 @@ export class AIService {
       }
     }
 
-    // 4. Browser-Mode: Google Gemini
+    // 5. Browser-Mode: Google Gemini
     try {
       const { response, emotion, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
       return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
@@ -359,6 +432,92 @@ export class AIService {
     }
 
     return blocks.length > 0 ? `\n\n${blocks.join('\n\n')}` : '';
+  }
+
+  private static async queryGroq(
+    userMessage: string,
+    persona: PersonaProfile,
+    recalledMemories: MemoryItem[],
+    apiKey: string,
+    history: ChatMessage[]
+  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+    const memoryContext = this.formatMemoryContext(recalledMemories);
+    const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.slice(-MAX_HISTORY_MESSAGES).map((msg) => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.emotion ? `${msg.content} <!--emotion:${msg.emotion}-->` : msg.content,
+      })),
+      { role: 'user', content: userMessage },
+    ];
+
+    const cachedModel = localStorage.getItem('amadeus_groq_model');
+    const candidates = [
+      ...(cachedModel ? [cachedModel] : []),
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'gemma2-9b-it',
+    ].filter((v, i, a) => a.indexOf(v) === i);
+
+    let lastErr: any = null;
+
+    for (const model of candidates) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.85,
+            max_tokens: 1024,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const msg = errData?.error?.message || res.statusText || 'Erro Groq';
+          const isRetryable =
+            res.status === 404 ||
+            res.status === 429 ||
+            res.status === 502 ||
+            res.status === 503 ||
+            msg.toLowerCase().includes('rate_limit') ||
+            msg.toLowerCase().includes('rate limit');
+
+          if (isRetryable) {
+            console.warn(`[Amadeus] Groq model ${model} returned ${res.status}, trying next candidate...`);
+            continue;
+          }
+          throw new GeminiError(res.status, msg);
+        }
+
+        const data = await res.json();
+        const choiceMsg = data.choices?.[0]?.message;
+        const contentVal = choiceMsg?.content;
+        const cleanContent = this.stripThinkingTags(typeof contentVal === 'string' ? contentVal : '');
+
+        if (!cleanContent || this.isScratchpadOrReasoning(cleanContent)) {
+          console.warn(`[Amadeus] Groq model ${model} returned empty, reasoning, or scratchpad, trying next candidate...`);
+          continue;
+        }
+
+        localStorage.setItem('amadeus_groq_model', model);
+        return { ...this.parseResponseTags(cleanContent), model: `${model} (Groq LPU)` };
+      } catch (err: any) {
+        lastErr = err;
+        if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
+        throw err;
+      }
+    }
+
+    if (lastErr) throw lastErr;
+    throw new GeminiError(404, 'Nenhum modelo do Groq Cloud respondeu.');
   }
 
   private static async queryOpenRouter(

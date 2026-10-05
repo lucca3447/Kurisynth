@@ -426,6 +426,7 @@ async def chat(req: ChatRequest):
     memory_store.save_message(session_id, sender="user", content=req.message)
 
     api_key = (req.apiKey or "").strip()
+    is_groq = api_key.startswith("gsk_")
     is_openrouter = api_key.startswith("sk-or-")
 
     # Offline Simulator fallback if no key
@@ -483,8 +484,75 @@ async def chat(req: ChatRequest):
         raw_reply = ""
         used_model = ""
 
-        # --- A. OpenRouter Branch ---
-        if is_openrouter:
+        # --- A. Groq Branch (Ultra-fast LPU) ---
+        if is_groq:
+            messages = [{"role": "system", "content": system_prompt}]
+            for turn in req.history[-MAX_HISTORY_MESSAGES:]:
+                messages.append({
+                    "role": "user" if turn.role == "user" else "assistant",
+                    "content": turn.content
+                })
+            messages.append({"role": "user", "content": req.message})
+
+            groq_candidates = [
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant",
+                "gemma2-9b-it"
+            ]
+
+            last_groq_err = None
+            async with httpx.AsyncClient(timeout=35.0) as client:
+                for candidate_groq in groq_candidates:
+                    try:
+                        res = await client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "model": candidate_groq,
+                                "messages": messages,
+                                "temperature": 0.85,
+                                "max_tokens": 1024,
+                            }
+                        )
+                        if res.status_code != 200:
+                            err_body = res.text
+                            is_retryable = (
+                                res.status_code in (404, 429, 502, 503)
+                                or "rate_limit" in err_body.lower()
+                                or "rate limit" in err_body.lower()
+                            )
+                            if is_retryable:
+                                print(f"[Amadeus Core] Groq model {candidate_groq} returned {res.status_code}, trying next...")
+                                continue
+                            raise GeminiError(res.status_code, err_body)
+
+                        data = res.json()
+                        choice_msg = (data.get("choices") or [{}])[0].get("message") or {}
+                        content_val = choice_msg.get("content")
+                        clean_candidate = strip_thinking_tags(content_val if isinstance(content_val, str) else "")
+
+                        if not clean_candidate or is_scratchpad_or_reasoning(clean_candidate):
+                            print(f"[Amadeus Core] Groq model {candidate_groq} returned empty, reasoning, or scratchpad, trying next candidate...")
+                            continue
+
+                        raw_reply = clean_candidate
+                        used_model = f"{candidate_groq} (Groq LPU)"
+                        last_groq_err = None
+                        break
+                    except GeminiError as e:
+                        last_groq_err = e
+                        if e.code in (404, 429, 502, 503):
+                            continue
+                        raise
+
+            if last_groq_err and not raw_reply:
+                raise last_groq_err
+
+        # --- B. OpenRouter Branch ---
+        elif is_openrouter:
             messages = [{"role": "system", "content": system_prompt}]
             for turn in req.history[-MAX_HISTORY_MESSAGES:]:
                 messages.append({
