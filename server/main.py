@@ -102,25 +102,80 @@ def load_persona(persona_id: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def is_scratchpad_or_reasoning(text: Optional[str]) -> bool:
+    """
+    Detects if the text is an internal AI scratchpad / chain-of-thought planning monologue
+    rather than dialogue spoken by the character in Portuguese.
+    """
+    if not text:
+        return True
+    t = text.strip()
+    if not t:
+        return True
+
+    # 1. Obvious English or Portuguese meta-planning starts
+    start_patterns = [
+        r"^the user\b",
+        r"^according to (?:the )?instructions\b",
+        r"^i need to (?:respond|act|think|make|create|follow)\b",
+        r"^i should (?:respond|act|think|make|create|follow)\b",
+        r"^let me (?:think|draft|see|structure|analyze|break)\b",
+        r"^let\'s (?:think|draft|see|structure|analyze|break)\b",
+        r"^here is (?:my|the) (?:plan|thought|response)\b",
+        r"^first, let's\b",
+        r"^first, i should\b",
+        r"^in this interaction\b",
+        r"^to respond to the user\b",
+        r"^thinking process:\b",
+        r"^analysis:\b",
+        r"^plan:\b",
+        r"^o usu[áa]rio (?:quer|pediu|compartilhou)\b",
+        r"^devo responder (?:como|em)\b",
+        r"^preciso responder (?:como|em)\b",
+    ]
+    for pattern in start_patterns:
+        if re.search(pattern, t, re.IGNORECASE):
+            return True
+
+    # 2. Strong meta-analysis indicators
+    meta_phrases = [
+        r"according to the instructions",
+        r"the user wants me to",
+        r"i need to respond as makise kurisu",
+        r"let me draft the response",
+        r"so i should structure it as",
+        r"now for the memory tag",
+        r"let me think about the emotion",
+        r"my dialogue text",
+    ]
+    matches = sum(1 for p in meta_phrases if re.search(p, t, re.IGNORECASE))
+    if matches >= 2:
+        return True
+
+    return False
+
 def strip_thinking_tags(raw: Optional[str]) -> str:
     """
     Strips internal chain-of-thought blocks such as:
     - <think>...</think>
     - <thought>...</thought>
     - <reasoning>...</reasoning>
-    - Unclosed <think> or <thought> tags (when generation finishes inside thought)
+    - <reflection>...</reflection>
+    - <scratchpad>...</scratchpad>
+    - Unclosed thinking tags (when generation finishes inside thought)
     - Markdown thought headers like **Thinking Process:**
+    - Rejects pure scratchpads/planning text
     """
     if not raw:
         return ""
     text = raw
-    text = re.sub(r"(?is)<think>.*?</think>", "", text)
-    text = re.sub(r"(?is)<thought>.*?</thought>", "", text)
-    text = re.sub(r"(?is)<reasoning>.*?</reasoning>", "", text)
-    text = re.sub(r"(?is)<think>.*$", "", text)
-    text = re.sub(r"(?is)<thought>.*$", "", text)
-    text = re.sub(r"(?is)<reasoning>.*$", "", text)
-    text = re.sub(r"(?is)\*{0,2}thinking(?:\s+process)?:\*{0,2}.*?\n\n", "", text)
+    text = re.sub(r"(?is)<(think|thought|reasoning|reflection|internal|scratchpad)>.*?</\1>", "", text)
+    text = re.sub(r"(?is)<(think|thought|reasoning|reflection|internal|scratchpad)>.*$", "", text)
+    text = re.sub(r"(?is)\*{0,2}(?:thinking(?:\s+process)?|racioc[íi]nio|pensamento):\*{0,2}.*?\n\n", "", text)
+    
+    if is_scratchpad_or_reasoning(text):
+        return ""
+
     return text.strip()
 
 def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
@@ -131,7 +186,7 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
     clean = strip_thinking_tags(raw)
     learned_info = None
 
-    if not clean:
+    if not clean or is_scratchpad_or_reasoning(clean):
         return "", "neutral", None
 
     # 1. Parse remember tag
@@ -140,7 +195,9 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
         title = remember_match.group(1).strip()
         content = remember_match.group(2).strip()
         emotion = remember_match.group(3).strip()
-        learned_info = LearnedMemoryInfo(title=title, content=content, emotionalWeight=emotion)
+        # Protect against dummy placeholders
+        if not re.match(r"(?i)^(t[íi]tulo curto|fato memorizado|sentimento)$", title):
+            learned_info = LearnedMemoryInfo(title=title, content=content, emotionalWeight=emotion)
         clean = re.sub(r"<!--remember:.*?-->", "", clean, flags=re.IGNORECASE)
 
     # 2. Parse emotion tag
@@ -412,10 +469,12 @@ async def chat(req: ChatRequest):
             messages.append({"role": "user", "content": req.message})
 
             openrouter_candidates = [
-                "nvidia/nemotron-3.5-lightning:free",
                 "google/gemma-4-31b-it:free",
                 "google/gemma-4-26b-a4b-it:free",
                 "liquid/lfm-2.5-2.6b:free",
+                "poolside/laguna-s-2.1:free",
+                "dots-studio/dots-3-note-preview:free",
+                "nvidia/nemotron-3.5-lightning:free",
                 "nvidia/nemotron-3-super-120b-a12b:free",
                 "nvidia/nemotron-3-ultra-550b-a55b:free",
             ]
@@ -458,8 +517,8 @@ async def chat(req: ChatRequest):
                         # Strictly do NOT fallback to internal reasoning / thinking as spoken character dialogue
                         clean_candidate = strip_thinking_tags(content_val if isinstance(content_val, str) else "")
 
-                        if not clean_candidate:
-                            print(f"[Amadeus Core] OpenRouter model {candidate_or} returned empty response or reasoning-only, trying next candidate...")
+                        if not clean_candidate or is_scratchpad_or_reasoning(clean_candidate):
+                            print(f"[Amadeus Core] OpenRouter model {candidate_or} returned empty, reasoning, or scratchpad, trying next candidate...")
                             continue
 
                         raw_reply = clean_candidate
