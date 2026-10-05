@@ -387,11 +387,12 @@ async def chat(req: ChatRequest):
             messages.append({"role": "user", "content": req.message})
 
             openrouter_candidates = [
-                "google/gemma-4-31b-it:free",
-                "google/gemma-4-26b-a4b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free",
                 "nvidia/nemotron-3.5-lightning:free",
-                "meta-llama/llama-3.3-70b-instruct:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "google/gemma-4-31b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
+                "liquid/lfm-2.5-2.6b:free",
             ]
 
             last_or_err = None
@@ -415,8 +416,13 @@ async def chat(req: ChatRequest):
                         )
                         if res.status_code != 200:
                             err_body = res.text
-                            if res.status_code == 404 or "unavailable for free" in err_body.lower():
-                                print(f"[Amadeus Core] OpenRouter model {candidate_or} unavailable for free, trying next...")
+                            is_retryable = (
+                                res.status_code in (404, 429, 502, 503)
+                                or "unavailable for free" in err_body.lower()
+                                or "rate-limited" in err_body.lower()
+                            )
+                            if is_retryable:
+                                print(f"[Amadeus Core] OpenRouter model {candidate_or} returned {res.status_code}, trying next...")
                                 continue
                             raise GeminiError(res.status_code, err_body)
 
@@ -427,7 +433,7 @@ async def chat(req: ChatRequest):
                         break
                     except GeminiError as e:
                         last_or_err = e
-                        if e.code == 404:
+                        if e.code in (404, 429, 502, 503):
                             continue
                         raise
 
