@@ -39,7 +39,7 @@ app.add_middleware(
   allow_headers=["*"],
 )
 
-# Auto-seed canonical memories on startup
+# Auto-seed canonical memories and fine-tuning exemplars on startup
 @app.on_event("startup")
 def startup_event():
     kurisu_file = PERSONAS_DIR / "kurisu.json"
@@ -53,6 +53,16 @@ def startup_event():
                     print(f"[Amadeus Core] ChromaDB + SQLite seeded with {len(memories)} canonical memories.")
         except Exception as e:
             print(f"[Amadeus Core] Error seeding memories: {e}")
+
+    # Seed fine-tuning exemplars for Dynamic Few-Shot prompting
+    ft_pack = BASE_DIR / "kurisu_finetuning_pack" / "kurisu_finetuning_dataset_enhanced.jsonl"
+    if not ft_pack.exists():
+        ft_pack = BASE_DIR / "kurisu_finetuning_pack" / "kurisu_finetuning_dataset.jsonl"
+    if ft_pack.exists():
+        try:
+            memory_store.seed_exemplars(ft_pack)
+        except Exception as e:
+            print(f"[Amadeus Core] Error seeding fine-tuning exemplars: {e}")
 
 # --- Data Models ---
 class HistoryTurn(BaseModel):
@@ -338,6 +348,13 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> tuple[s
         mem = memories[0]
         return f"Isso me faz lembrar de um ponto nos meus registros de memória: {mem.get('content', '')} Como você vê essa relação?", "thinking", learned
 
+    # Check if a fine-tuning dataset exemplar matches the query
+    closest = memory_store.search_exemplars(text, n_results=1)
+    if closest:
+        parsed_reply, parsed_emo, _ = parse_tags(closest[0]["assistant"])
+        if parsed_reply:
+            return parsed_reply, parsed_emo, learned
+
     generic = [
         ("Interessante essa sua linha de raciocínio. Do ponto de vista cognitivo, como você chegou a essa conclusão?", "thinking", learned),
         ("Entendo. Estou processando os dados através da minha matriz neural. Você gostaria de aprofundar mais nesse assunto?", "neutral", learned),
@@ -354,6 +371,7 @@ def health():
         "database": "SQLite (amadeus.db)",
         "vectorStore": "ChromaDB (./data/memory_db)",
         "chromaCount": memory_store.collection.count(),
+        "exemplarsCount": memory_store.exemplars_collection.count(),
         "totalMemories": len(memory_store.get_all_memories()),
         "totalSessions": len(memory_store.list_sessions()),
         "edgeTtsAvailable": EDGE_TTS_AVAILABLE
@@ -449,6 +467,13 @@ async def chat(req: ChatRequest):
         block = "[FATOS APRENDIDOS ANTERIORMENTE SOBRE O OPERADOR]:\n" + "\n".join(
             [f"- {m['title']}: {m['content']}" for m in user_memories]
         )
+        memory_ctx_blocks.append(block)
+
+    # 3. Dynamic Few-Shot Exemplars from Kurisu Fine-Tuning Pack
+    exemplars = memory_store.search_exemplars(req.message, n_results=2)
+    if exemplars:
+        ex_lines = [f"Operador: \"{ex['user']}\"\nKurisu: \"{ex['assistant']}\"" for ex in exemplars]
+        block = "[EXEMPLOS CANÔNICOS DE DIÁLOGO E TOM DA KURISU]:\n" + "\n\n".join(ex_lines)
         memory_ctx_blocks.append(block)
 
     memory_ctx = ("\n\n" + "\n\n".join(memory_ctx_blocks)) if memory_ctx_blocks else ""

@@ -63,6 +63,77 @@ class MemoryStore:
             name="amadeus_cortex",
             metadata={"description": "Makise Kurisu digitized memories and user-learned facts"}
         )
+        self.exemplars_collection = self.chroma_client.get_or_create_collection(
+            name="kurisu_exemplars",
+            metadata={"description": "Fine-tuning dialogue exemplars for Dynamic Few-Shot prompting"}
+        )
+
+    def seed_exemplars(self, dataset_path: Path):
+        """
+        Seeds dialogue exemplars from the fine-tuning dataset into ChromaDB.
+        """
+        if not dataset_path.exists():
+            return
+
+        count = self.exemplars_collection.count()
+        if count >= 60:
+            return
+
+        ids = []
+        documents = []
+        metadatas = []
+
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    msgs = data.get("messages", [])
+                    user_text = next((m["content"] for m in msgs if m["role"] == "user"), "")
+                    asst_text = next((m["content"] for m in msgs if m["role"] == "assistant"), "")
+                    if user_text and asst_text:
+                        ex_id = f"ex_{idx}"
+                        ids.append(ex_id)
+                        documents.append(user_text)
+                        metadatas.append({
+                            "user": user_text,
+                            "assistant": asst_text
+                        })
+                except Exception as e:
+                    print(f"[Amadeus Core] Error parsing exemplar line {idx}: {e}")
+
+        if ids:
+            self.exemplars_collection.upsert(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
+            )
+            print(f"[Amadeus Core] ChromaDB seeded with {len(ids)} Kurisu fine-tuning exemplars.")
+
+    def search_exemplars(self, query: str, n_results: int = 2) -> List[Dict[str, str]]:
+        """
+        Retrieves the most semantically relevant dialog turns from the fine-tuning dataset.
+        """
+        count = self.exemplars_collection.count()
+        if count == 0:
+            return []
+
+        limit = min(n_results, count)
+        results = self.exemplars_collection.query(
+            query_texts=[query],
+            n_results=limit
+        )
+
+        matched: List[Dict[str, str]] = []
+        if results and results.get("metadatas") and len(results["metadatas"]) > 0:
+            for meta in results["metadatas"][0]:
+                matched.append({
+                    "user": meta.get("user", ""),
+                    "assistant": meta.get("assistant", "")
+                })
+        return matched
 
     def seed_canonical_memories(self, memories: List[Dict[str, Any]]):
         """
