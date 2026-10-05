@@ -310,6 +310,55 @@ async def get_candidate_models(client: httpx.AsyncClient, api_key: str, force: b
 
     return candidates
 
+async def get_groq_candidate_models(client: httpx.AsyncClient, api_key: str) -> List[str]:
+    """
+    Queries Groq's /openai/v1/models endpoint using the user's API key to find
+    which models are currently active, avoiding decommissioned models.
+    """
+    try:
+        res = await client.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=15.0
+        )
+        if res.status_code == 200:
+            data = res.json()
+            models = [
+                m["id"] for m in data.get("data", [])
+                if isinstance(m.get("id"), str)
+                and m.get("active", True) is not False
+                and not re.search(r"whisper|tts|audio|embed|guard", m["id"], re.IGNORECASE)
+            ]
+            if models:
+                def score_groq(m: str) -> int:
+                    score = 0
+                    if "120b" in m: score += 120
+                    elif "70b" in m: score += 100
+                    elif "27b" in m: score += 80
+                    elif "20b" in m: score += 70
+                    elif "8b" in m: score += 50
+                    if "llama" in m: score += 30
+                    if "gpt-oss" in m: score += 25
+                    if "qwen" in m: score += 20
+                    if "versatile" in m: score += 15
+                    if "instant" in m: score += 10
+                    return score
+
+                models.sort(key=score_groq, reverse=True)
+                print(f"[Amadeus Core] Groq active models discovered: {models[:6]}")
+                return models
+    except Exception as e:
+        print(f"[Amadeus Core] Could not fetch Groq models list: {e}")
+
+    # Fallback if discovery failed
+    return [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant"
+    ]
+
 def offline_simulator(text: str, persona: dict, memories: List[dict]) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
     t = text.lower().strip()
     learned = None
@@ -494,14 +543,14 @@ async def chat(req: ChatRequest):
                 })
             messages.append({"role": "user", "content": req.message})
 
-            groq_candidates = [
-                "llama-3.3-70b-versatile",
-                "llama-3.1-8b-instant",
-                "gemma2-9b-it"
-            ]
-
             last_groq_err = None
+            fp = api_key[-8:]
             async with httpx.AsyncClient(timeout=35.0) as client:
+                groq_candidates = await get_groq_candidate_models(client, api_key)
+                if fp in _model_cache and _model_cache[fp] in groq_candidates:
+                    groq_candidates.remove(_model_cache[fp])
+                    groq_candidates.insert(0, _model_cache[fp])
+
                 for candidate_groq in groq_candidates:
                     try:
                         res = await client.post(
@@ -520,12 +569,13 @@ async def chat(req: ChatRequest):
                         if res.status_code != 200:
                             err_body = res.text
                             is_retryable = (
-                                res.status_code in (404, 429, 502, 503)
+                                res.status_code in (400, 404, 429, 502, 503)
+                                or "decommissioned" in err_body.lower()
                                 or "rate_limit" in err_body.lower()
                                 or "rate limit" in err_body.lower()
                             )
                             if is_retryable:
-                                print(f"[Amadeus Core] Groq model {candidate_groq} returned {res.status_code}, trying next...")
+                                print(f"[Amadeus Core] Groq model {candidate_groq} returned {res.status_code} ({err_body[:80]}...), trying next...")
                                 continue
                             raise GeminiError(res.status_code, err_body)
 
@@ -540,11 +590,12 @@ async def chat(req: ChatRequest):
 
                         raw_reply = clean_candidate
                         used_model = f"{candidate_groq} (Groq LPU)"
+                        _model_cache[fp] = candidate_groq
                         last_groq_err = None
                         break
                     except GeminiError as e:
                         last_groq_err = e
-                        if e.code in (404, 429, 502, 503):
+                        if e.code in (400, 404, 429, 502, 503):
                             continue
                         raise
 

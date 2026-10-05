@@ -175,6 +175,53 @@ export class AIService {
   }
 
   /**
+   * Queries Groq's /openai/v1/models endpoint using the user's API key to find
+   * which models are currently active, avoiding decommissioned models.
+   */
+  static async getCandidateGroqModels(apiKey: string): Promise<string[]> {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.data || [])
+          .filter((m: any) => typeof m?.id === 'string' && m?.active !== false && !/whisper|tts|audio|embed|guard/i.test(m.id))
+          .map((m: any) => m.id as string);
+
+        if (models.length > 0) {
+          const score = (name: string): number => {
+            let s = 0;
+            if (name.includes('120b')) s += 120;
+            else if (name.includes('70b')) s += 100;
+            else if (name.includes('27b')) s += 80;
+            else if (name.includes('20b')) s += 70;
+            else if (name.includes('8b')) s += 50;
+            if (name.includes('llama')) s += 30;
+            if (name.includes('gpt-oss')) s += 25;
+            if (name.includes('qwen')) s += 20;
+            if (name.includes('versatile')) s += 15;
+            if (name.includes('instant')) s += 10;
+            return s;
+          };
+          models.sort((a: string, b: string) => score(b) - score(a));
+          return models;
+        }
+      }
+    } catch (e) {
+      console.warn('[Amadeus] Could not fetch Groq models list:', e);
+    }
+
+    return [
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b',
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+    ];
+  }
+
+  /**
    * Tests whether the provided API key is valid.
    */
   static async testConnection(apiKey: string): Promise<{ ok: boolean; model?: string; message: string }> {
@@ -183,11 +230,7 @@ export class AIService {
 
     // Check if Groq key
     if (isGroqKey(key)) {
-      const candidates = [
-        'llama-3.3-70b-versatile',
-        'llama-3.1-8b-instant',
-        'gemma2-9b-it',
-      ];
+      const candidates = await this.getCandidateGroqModels(key);
       let lastErr: any = null;
 
       for (const model of candidates) {
@@ -209,15 +252,17 @@ export class AIService {
             const errData = await res.json().catch(() => ({}));
             const msg = errData?.error?.message || res.statusText || 'Erro no Groq';
             const isRetryable =
+              res.status === 400 ||
               res.status === 404 ||
               res.status === 429 ||
               res.status === 502 ||
               res.status === 503 ||
+              msg.toLowerCase().includes('decommissioned') ||
               msg.toLowerCase().includes('rate_limit') ||
               msg.toLowerCase().includes('rate limit');
 
             if (isRetryable) {
-              console.warn(`[Amadeus] Groq model ${model} returned ${res.status}, testing next...`);
+              console.warn(`[Amadeus] Groq model ${model} returned ${res.status} (${msg}), testing next...`);
               continue;
             }
             throw new GeminiError(res.status, msg);
@@ -227,7 +272,7 @@ export class AIService {
           return { ok: true, model: `${model} (Groq LPU)`, message: `Conectado ao Groq Cloud (${model})!` };
         } catch (err: any) {
           lastErr = err;
-          if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
+          if (err instanceof GeminiError && (err.code === 400 || err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
           break;
         }
       }
@@ -453,12 +498,11 @@ export class AIService {
       { role: 'user', content: userMessage },
     ];
 
+    const liveCandidates = await this.getCandidateGroqModels(apiKey);
     const cachedModel = localStorage.getItem('amadeus_groq_model');
     const candidates = [
-      ...(cachedModel ? [cachedModel] : []),
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'gemma2-9b-it',
+      ...(cachedModel && liveCandidates.includes(cachedModel) ? [cachedModel] : []),
+      ...liveCandidates,
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastErr: any = null;
@@ -483,15 +527,17 @@ export class AIService {
           const errData = await res.json().catch(() => ({}));
           const msg = errData?.error?.message || res.statusText || 'Erro Groq';
           const isRetryable =
+            res.status === 400 ||
             res.status === 404 ||
             res.status === 429 ||
             res.status === 502 ||
             res.status === 503 ||
+            msg.toLowerCase().includes('decommissioned') ||
             msg.toLowerCase().includes('rate_limit') ||
             msg.toLowerCase().includes('rate limit');
 
           if (isRetryable) {
-            console.warn(`[Amadeus] Groq model ${model} returned ${res.status}, trying next candidate...`);
+            console.warn(`[Amadeus] Groq model ${model} returned ${res.status} (${msg}), trying next candidate...`);
             continue;
           }
           throw new GeminiError(res.status, msg);
@@ -511,13 +557,13 @@ export class AIService {
         return { ...this.parseResponseTags(cleanContent), model: `${model} (Groq LPU)` };
       } catch (err: any) {
         lastErr = err;
-        if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
+        if (err instanceof GeminiError && (err.code === 400 || err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
         throw err;
       }
     }
 
     if (lastErr) throw lastErr;
-    throw new GeminiError(404, 'Nenhum modelo do Groq Cloud respondeu.');
+    throw new GeminiError(404, 'Nenhum modelo ativo do Groq Cloud respondeu.');
   }
 
   private static async queryOpenRouter(
