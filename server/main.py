@@ -102,12 +102,15 @@ def load_persona(persona_id: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def parse_tags(raw: str) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
+def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
     """
     Parses both <!--emotion:xxx--> and <!--remember:title|content|emotion-->
     """
-    clean = raw
+    clean = (raw or "").strip()
     learned_info = None
+
+    if not clean:
+        return "", "neutral", None
 
     # 1. Parse remember tag
     remember_match = re.search(r"<!--remember:(.*?)\|(.*?)\|(.*?)-->", clean, re.IGNORECASE)
@@ -427,7 +430,16 @@ async def chat(req: ChatRequest):
                             raise GeminiError(res.status_code, err_body)
 
                         data = res.json()
-                        raw_reply = data["choices"][0]["message"]["content"]
+                        choice_msg = (data.get("choices") or [{}])[0].get("message") or {}
+                        content_val = choice_msg.get("content")
+                        reasoning_val = choice_msg.get("reasoning")
+                        candidate_reply = (content_val if content_val is not None else (reasoning_val or "")).strip()
+
+                        if not candidate_reply:
+                            print(f"[Amadeus Core] OpenRouter model {candidate_or} returned empty response, trying next...")
+                            continue
+
+                        raw_reply = candidate_reply
                         used_model = f"{candidate_or.replace(':free', '')} (OpenRouter)"
                         last_or_err = None
                         break

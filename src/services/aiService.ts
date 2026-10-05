@@ -428,9 +428,14 @@ export class AIService {
         }
 
         const data = await res.json();
-        const raw = data.choices?.[0]?.message?.content || '';
+        const choiceMsg = data.choices?.[0]?.message;
+        const contentVal = choiceMsg?.content;
+        const reasoningVal = choiceMsg?.reasoning;
+        const raw = (typeof contentVal === 'string' ? contentVal : typeof reasoningVal === 'string' ? reasoningVal : '').trim();
+
         if (!raw) {
-          throw new GeminiError(0, 'Resposta vazia recebida do OpenRouter.');
+          console.warn(`[Amadeus] OpenRouter model ${model} returned empty content, trying next candidate...`);
+          continue;
         }
 
         localStorage.setItem('amadeus_openrouter_model', model);
@@ -538,17 +543,21 @@ export class AIService {
   /**
    * Extracts both emotion tag and remember tag from text
    */
-  public static parseResponseTags(rawText: string): {
+  public static parseResponseTags(rawText: string | null | undefined): {
     response: string;
     emotion: Emotion;
     learnedMemory?: LearnedMemoryInfo;
   } {
     let emotion: Emotion = 'neutral';
-    let cleanText = rawText;
+    let cleanText = (rawText || '').trim();
     let learnedMemory: LearnedMemoryInfo | undefined = undefined;
 
+    if (!cleanText) {
+      return { response: '', emotion: 'neutral' };
+    }
+
     // 1. Extract remember tag: <!--remember:title|content|emotion-->
-    const remMatch = rawText.match(/<!--\s*remember:\s*(.*?)\|(.*?)\|(.*?)\s*-->/i);
+    const remMatch = cleanText.match(/<!--\s*remember:\s*(.*?)\|(.*?)\|(.*?)\s*-->/i);
     if (remMatch) {
       learnedMemory = {
         title: remMatch[1].trim(),
@@ -559,7 +568,7 @@ export class AIService {
     }
 
     // 2. Extract emotion tag: <!--emotion:xxx-->
-    const match = rawText.match(/<!--\s*emotion:\s*([a-z]+)\s*-->/i);
+    const match = cleanText.match(/<!--\s*emotion:\s*([a-z]+)\s*-->/i);
     if (match && match[1]) {
       const parsed = match[1].toLowerCase() as Emotion;
       if (VALID_EMOTIONS.includes(parsed)) {
@@ -568,7 +577,7 @@ export class AIService {
       cleanText = cleanText.replace(/<!--\s*emotion:\s*[a-z]+\s*-->/gi, '');
     } else {
       // Inferred sentiment
-      const lower = rawText.toLowerCase();
+      const lower = cleanText.toLowerCase();
       if (lower.includes('baka') || lower.includes('idiota') || lower.includes('não me entenda mal') || lower.includes('christina')) {
         emotion = 'tsundere';
       } else if (lower.includes('o quê') || lower.includes('como assim') || lower.includes('?!')) {
