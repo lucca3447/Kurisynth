@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  body {
+    background-color: #070b09;
+    color: #e0f0e8;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+/* Custom Scanline Effect */
+.crt-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 4px, 6px 100%;
+  pointer-events: none;
+}
+
+/* Amadeus Glowing Text and Borders */
+.text-glow-green {
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6), 0 0 20px rgba(0, 255, 136, 0.3);
+}
+
+.text-glow-red {
+  text-shadow: 0 0 8px rgba(255, 51, 75, 0.6), 0 0 20px rgba(255, 51, 75, 0.3);
+}
+
+.box-glow-green {
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.15), inset 0 0 15px rgba(0, 255, 136, 0.05);
+}
+
+/* Custom Scrollbar for terminal feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #080d0b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f3b2f;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00ff88;
+}
