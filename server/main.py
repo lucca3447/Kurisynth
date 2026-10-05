@@ -102,11 +102,33 @@ def load_persona(persona_id: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def strip_thinking_tags(raw: Optional[str]) -> str:
+    """
+    Strips internal chain-of-thought blocks such as:
+    - <think>...</think>
+    - <thought>...</thought>
+    - <reasoning>...</reasoning>
+    - Unclosed <think> or <thought> tags (when generation finishes inside thought)
+    - Markdown thought headers like **Thinking Process:**
+    """
+    if not raw:
+        return ""
+    text = raw
+    text = re.sub(r"(?is)<think>.*?</think>", "", text)
+    text = re.sub(r"(?is)<thought>.*?</thought>", "", text)
+    text = re.sub(r"(?is)<reasoning>.*?</reasoning>", "", text)
+    text = re.sub(r"(?is)<think>.*$", "", text)
+    text = re.sub(r"(?is)<thought>.*$", "", text)
+    text = re.sub(r"(?is)<reasoning>.*$", "", text)
+    text = re.sub(r"(?is)\*{0,2}thinking(?:\s+process)?:\*{0,2}.*?\n\n", "", text)
+    return text.strip()
+
 def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
     """
     Parses both <!--emotion:xxx--> and <!--remember:title|content|emotion-->
+    after stripping any internal reasoning/thinking blocks.
     """
-    clean = (raw or "").strip()
+    clean = strip_thinking_tags(raw)
     learned_info = None
 
     if not clean:
@@ -390,12 +412,12 @@ async def chat(req: ChatRequest):
             messages.append({"role": "user", "content": req.message})
 
             openrouter_candidates = [
-                "nvidia/nemotron-3-super-120b-a12b:free",
                 "nvidia/nemotron-3.5-lightning:free",
-                "nvidia/nemotron-3-ultra-550b-a55b:free",
                 "google/gemma-4-31b-it:free",
                 "google/gemma-4-26b-a4b-it:free",
                 "liquid/lfm-2.5-2.6b:free",
+                "nvidia/nemotron-3-super-120b-a12b:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
             ]
 
             last_or_err = None
@@ -414,7 +436,8 @@ async def chat(req: ChatRequest):
                                 "model": candidate_or,
                                 "messages": messages,
                                 "temperature": 0.85,
-                                "max_tokens": 1024
+                                "max_tokens": 1024,
+                                "include_reasoning": False
                             }
                         )
                         if res.status_code != 200:
@@ -432,14 +455,14 @@ async def chat(req: ChatRequest):
                         data = res.json()
                         choice_msg = (data.get("choices") or [{}])[0].get("message") or {}
                         content_val = choice_msg.get("content")
-                        reasoning_val = choice_msg.get("reasoning")
-                        candidate_reply = (content_val if content_val is not None else (reasoning_val or "")).strip()
+                        # Strictly do NOT fallback to internal reasoning / thinking as spoken character dialogue
+                        clean_candidate = strip_thinking_tags(content_val if isinstance(content_val, str) else "")
 
-                        if not candidate_reply:
-                            print(f"[Amadeus Core] OpenRouter model {candidate_or} returned empty response, trying next...")
+                        if not clean_candidate:
+                            print(f"[Amadeus Core] OpenRouter model {candidate_or} returned empty response or reasoning-only, trying next candidate...")
                             continue
 
-                        raw_reply = candidate_reply
+                        raw_reply = clean_candidate
                         used_model = f"{candidate_or.replace(':free', '')} (OpenRouter)"
                         last_or_err = None
                         break

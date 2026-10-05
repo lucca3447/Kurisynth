@@ -180,12 +180,12 @@ export class AIService {
     // Check if OpenRouter key
     if (isOpenRouterKey(key)) {
       const candidates = [
-        'nvidia/nemotron-3-super-120b-a12b:free',
         'nvidia/nemotron-3.5-lightning:free',
-        'nvidia/nemotron-3-ultra-550b-a55b:free',
         'google/gemma-4-31b-it:free',
         'google/gemma-4-26b-a4b-it:free',
         'liquid/lfm-2.5-2.6b:free',
+        'nvidia/nemotron-3-super-120b-a12b:free',
+        'nvidia/nemotron-3-ultra-550b-a55b:free',
       ];
       let lastErr: any = null;
 
@@ -379,14 +379,17 @@ export class AIService {
     ];
 
     const cachedModel = localStorage.getItem('amadeus_openrouter_model');
+    // If cached model is a pure reasoning model like nemotron-3-super, do not prioritize it
+    const validCache = cachedModel && !cachedModel.includes('super') ? cachedModel : null;
+
     const candidates = [
-      ...(cachedModel ? [cachedModel] : []),
-      'nvidia/nemotron-3-super-120b-a12b:free',
+      ...(validCache ? [validCache] : []),
       'nvidia/nemotron-3.5-lightning:free',
-      'nvidia/nemotron-3-ultra-550b-a55b:free',
       'google/gemma-4-31b-it:free',
       'google/gemma-4-26b-a4b-it:free',
       'liquid/lfm-2.5-2.6b:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastErr: any = null;
@@ -406,6 +409,7 @@ export class AIService {
             messages,
             temperature: 0.85,
             max_tokens: 1024,
+            include_reasoning: false,
           }),
         });
 
@@ -430,17 +434,17 @@ export class AIService {
         const data = await res.json();
         const choiceMsg = data.choices?.[0]?.message;
         const contentVal = choiceMsg?.content;
-        const reasoningVal = choiceMsg?.reasoning;
-        const raw = (typeof contentVal === 'string' ? contentVal : typeof reasoningVal === 'string' ? reasoningVal : '').trim();
+        // Strictly do NOT fallback to internal reasoning / thinking as spoken character dialogue
+        const cleanContent = this.stripThinkingTags(typeof contentVal === 'string' ? contentVal : '');
 
-        if (!raw) {
-          console.warn(`[Amadeus] OpenRouter model ${model} returned empty content, trying next candidate...`);
+        if (!cleanContent) {
+          console.warn(`[Amadeus] OpenRouter model ${model} returned empty content or reasoning-only, trying next candidate...`);
           continue;
         }
 
         localStorage.setItem('amadeus_openrouter_model', model);
         const cleanName = model.replace(':free', '');
-        return { ...this.parseResponseTags(raw), model: `${cleanName} (OpenRouter)` };
+        return { ...this.parseResponseTags(cleanContent), model: `${cleanName} (OpenRouter)` };
       } catch (err: any) {
         lastErr = err;
         if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
@@ -541,6 +545,22 @@ export class AIService {
   }
 
   /**
+   * Strips internal chain-of-thought blocks such as <think>, <thought>, or unclosed thinking
+   */
+  public static stripThinkingTags(rawText: string | null | undefined): string {
+    if (!rawText) return '';
+    let text = rawText;
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    text = text.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
+    text = text.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+    text = text.replace(/<think>[\s\S]*$/gi, '');
+    text = text.replace(/<thought>[\s\S]*$/gi, '');
+    text = text.replace(/<reasoning>[\s\S]*$/gi, '');
+    text = text.replace(/\*{0,2}thinking(?:\s+process)?:\*{0,2}[\s\S]*?\n\n/gi, '');
+    return text.trim();
+  }
+
+  /**
    * Extracts both emotion tag and remember tag from text
    */
   public static parseResponseTags(rawText: string | null | undefined): {
@@ -549,7 +569,7 @@ export class AIService {
     learnedMemory?: LearnedMemoryInfo;
   } {
     let emotion: Emotion = 'neutral';
-    let cleanText = (rawText || '').trim();
+    let cleanText = this.stripThinkingTags(rawText);
     let learnedMemory: LearnedMemoryInfo | undefined = undefined;
 
     if (!cleanText) {
