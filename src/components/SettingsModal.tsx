@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Key, Volume2, Monitor, HelpCircle, X, Check } from 'lucide-react';
+import { Settings, Key, Volume2, Monitor, HelpCircle, X, Check, Zap, Loader2, AlertTriangle } from 'lucide-react';
 import { VoiceSettings } from '../types/amadeus';
 import { SpeechService } from '../services/speechService';
+import { AIService } from '../services/aiService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -27,6 +28,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    const result = await AIService.testConnection(tempApiKey);
+    setTestResult(result);
+    setIsTesting(false);
+  };
 
   useEffect(() => {
     setTempApiKey(apiKey);
@@ -79,13 +90,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <p className="text-[11px] text-amadeus-muted leading-relaxed font-sans">
               Insira sua chave do Google AI Studio para raciocínio em nuvem ilimitado no plano Free Tier (sem necessidade de cartão de crédito).
             </p>
-            <input
-              type="password"
-              placeholder="Cole sua API Key aqui (AIzaSy...)"
-              value={tempApiKey}
-              onChange={(e) => setTempApiKey(e.target.value)}
-              className="w-full h-9 px-3 rounded bg-amadeus-card border border-amadeus-border text-xs text-white placeholder-amadeus-muted/50 focus:outline-none focus:border-amadeus-accent"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                placeholder="Cole sua API Key aqui (AIzaSy...)"
+                value={tempApiKey}
+                onChange={(e) => {
+                  setTempApiKey(e.target.value);
+                  setTestResult(null);
+                }}
+                className="flex-1 h-9 px-3 rounded bg-amadeus-card border border-amadeus-border text-xs text-white placeholder-amadeus-muted/50 focus:outline-none focus:border-amadeus-accent"
+              />
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={isTesting || !tempApiKey.trim()}
+                className="h-9 px-3 rounded border border-amadeus-accent/60 text-amadeus-accent text-xs flex items-center gap-1.5 hover:bg-amadeus-accent hover:text-black transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-amadeus-accent shrink-0"
+              >
+                {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                <span>{isTesting ? 'Testando...' : 'Testar Conexão'}</span>
+              </button>
+            </div>
+            {testResult && (
+              <div
+                className={`flex items-start gap-1.5 text-[11px] p-2 rounded border font-sans ${
+                  testResult.ok
+                    ? 'text-amadeus-accent border-amadeus-accent/40 bg-amadeus-accent/10'
+                    : 'text-amadeus-red border-amadeus-red/40 bg-amadeus-red/10'
+                }`}
+              >
+                {testResult.ok ? <Check className="w-3.5 h-3.5 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}
+                <span>
+                  {testResult.message}
+                  {testResult.ok && ' — clique em "Salvar Alterações" para usar.'}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5 text-[10px] text-amadeus-muted">
               <HelpCircle className="w-3 h-3 text-amadeus-accent shrink-0" />
               <span>Deixe em branco para usar o <strong>Simulador Offline Autônomo</strong> (R$ 0,00).</span>

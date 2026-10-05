@@ -13,12 +13,17 @@ export class SpeechService {
   private static recognition: any = null;
   private static isListening = false;
 
+  static isRecognitionSupported(): boolean {
+    return typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
   /**
    * Initializes Speech Recognition (STT - Microphone)
    */
   static initRecognition(
     onResult: SpeechCallback,
-    onStateChange: SpeechStateCallback
+    onStateChange: SpeechStateCallback,
+    onError?: (message: string) => void
   ): boolean {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
@@ -45,9 +50,20 @@ export class SpeechService {
       };
 
       this.recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
         this.isListening = false;
         onStateChange(false);
+
+        // Silence or user cancel are not real failures
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+
+        console.warn('Speech recognition error:', event.error);
+        const messages: Record<string, string> = {
+          'not-allowed': 'Microfone bloqueado. Clique no cadeado ao lado do endereço (localhost:5173), permita o Microfone e recarregue a página.',
+          'service-not-allowed': 'O navegador não permite reconhecimento de voz aqui. Use Chrome ou Edge.',
+          'audio-capture': 'Nenhum microfone encontrado. Verifique se ele está conectado.',
+          'network': 'O reconhecimento de voz precisa de internet (o navegador usa um serviço online).',
+        };
+        onError?.(messages[event.error] ?? `Erro no microfone: ${event.error}`);
       };
 
       this.recognition.onend = () => {
@@ -162,7 +178,10 @@ export class SpeechService {
     };
 
     utterance.onerror = (e) => {
-      console.warn('Speech synthesis error:', e);
+      // 'interrupted' / 'canceled' happen whenever a new reply cuts off the previous one: harmless
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.warn('Speech synthesis error:', e.error);
+      }
       options.onEnd?.();
     };
 

@@ -58,15 +58,22 @@ class PersonaProfile(BaseModel):
     systemPrompt: str
     memories: List[MemoryItem]
 
+class HistoryTurn(BaseModel):
+    role: str  # "user" or "model"
+    content: str
+
 class ChatRequest(BaseModel):
     message: str
     personaId: Optional[str] = "kurisu"
     apiKey: Optional[str] = None
+    history: List[HistoryTurn] = []
 
 class ChatResponse(BaseModel):
     response: str
     emotion: str
     recalledMemories: List[str]
+    model: Optional[str] = None
+    error: Optional[str] = None
 
 class AddMemoryRequest(BaseModel):
     title: str
@@ -137,21 +144,101 @@ def parse_emotion_tag(raw: str) -> tuple[str, str]:
     
     return raw.strip(), "neutral"
 
+API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+PREFERRED_MODELS = ["gemini-3.8-flash", "gemini-flash-latest"]
+MAX_HISTORY_MESSAGES = 20
+
+# In-memory model cache per key fingerprint
+_model_cache: Dict[str, str] = {}
+
+class GeminiError(Exception):
+    def __init__(self, code: int, message: str):
+        super().__init__(f"Gemini API error {code}: {message}")
+        self.code = code
+        self.message = message
+
+def _score_model(name: str) -> float:
+    match = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+    version = float(match.group(1)) if match else 0.0
+    score = version * 100
+    if "lite" in name:
+        score -= 30
+    if "preview" in name or "exp" in name:
+        score -= 10
+    return score
+
+async def gemini_request(client: httpx.AsyncClient, method: str, path: str, api_key: str, body: Optional[dict] = None) -> dict:
+    url = f"{API_BASE}/{path}"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key
+    }
+    try:
+        res = await client.request(method, url, headers=headers, json=body, timeout=30.0)
+    except Exception as e:
+        raise GeminiError(0, f"Sem conexão com a Google: {e}")
+
+    if res.status_code != 200:
+        data = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
+        msg = (data.get("error") or {}).get("message") or res.text or "Erro desconhecido"
+        raise GeminiError(res.status_code, msg)
+
+    return res.json()
+
+async def resolve_model(client: httpx.AsyncClient, api_key: str, force: bool = False) -> str:
+    fp = api_key[-8:]
+    if not force and fp in _model_cache:
+        return _model_cache[fp]
+
+    data = await gemini_request(client, "GET", "models?pageSize=1000", api_key)
+    usable = [
+        m["name"].replace("models/", "")
+        for m in data.get("models", [])
+        if "generateContent" in m.get("supportedGenerationMethods", [])
+        and m["name"].replace("models/", "").startswith("gemini")
+        and not re.search(r"tts|image|audio|live|embedding", m["name"])
+    ]
+
+    if not usable:
+        raise GeminiError(404, "Nenhum modelo de chat disponível para esta chave.")
+
+    pick = None
+    for pref in PREFERRED_MODELS:
+        if pref in usable:
+            pick = pref
+            break
+
+    if not pick:
+        flash_models = [m for m in usable if "flash" in m]
+        if flash_models:
+            flash_models.sort(key=_score_model, reverse=True)
+            pick = flash_models[0]
+        else:
+            usable.sort(key=_score_model, reverse=True)
+            pick = usable[0]
+
+    _model_cache[fp] = pick
+    return pick
+
 def offline_simulator(text: str, persona: PersonaProfile, memories: List[MemoryItem]) -> tuple[str, str]:
-    t = text.lower()
-    if "christina" in t or "assistente" in t or "zombie" in t:
+    t = text.lower().strip()
+
+    def has(*words):
+        return any(re.search(r'(?i)\b' + re.escape(w) + r'\b', t) for w in words)
+
+    if has("christina", "assistente", "zombie"):
         return "Meu nome não é Christina! E não adicione o '-ina'! Eu sou uma neurocientista independente com artigos na Science!", "annoyed"
-    if "nullpo" in t:
+    if has("nullpo", "nurupo"):
         return "Gah!... Espere! Por que eu respondi a isso?! Q-quem te ensinou esse meme antigo do @channel?! Não é como se eu frequentasse fóruns anônimos!", "flustered"
-    if "@channel" in t or "fórum" in t:
+    if "@channel" in t or has("channeler", "fórum", "forum"):
         return "O quê?! D-do que você está falando?! Eu sou uma pesquisadora séria em Viktor Chondria, não tenho tempo para ficar lendo fóruns anônimos!", "tsundere"
-    if "tempo" in t or "viagem" in t:
+    if has("tempo", "viagem", "buraco de minhoca", "paradoxo"):
         return "Fisicamente falando, enviar matéria ao passado violaria os princípios da causalidade e termodinâmica. Mas se memórias pudessem ser convertidas em pacotes de dados modulados... em teoria, poderiam alcançar o passado.", "thinking"
-    if "dr pepper" in t or "bebida" in t:
+    if has("dr pepper", "bebida", "café", "cafe"):
         return "Ah, Dr Pepper! A bebida dos intelectuais escolhidos! É claro que o café preto de torra escura também é indispensável durante noites em claro no laboratório.", "smug"
-    if "okabe" in t or "kyouma" in t:
+    if has("okabe", "hououin", "kyouma", "rintaro"):
         return "Aquele sujeito de jaleco branco? Ele me ligou outro dia falando sobre a 'Organização'. No começo achei que fosse pura piada, mas... seus olhos pareciam carregar uma dor muito profunda.", "serious"
-    if "olá" in t or "oi" in t:
+    if has("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite"):
         return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.name} do Laboratório 304. O que você gostaria de debater hoje?", "smile"
     
     if memories:
@@ -194,35 +281,65 @@ async def chat(req: ChatRequest):
     recalled = match_memories(req.message, persona)
     recalled_ids = [m.id for m in recalled]
 
-    # If Gemini API key is provided, query Google Gemini 2.0 / 1.5 Flash Free Tier
-    if req.apiKey and len(req.apiKey.strip()) > 10:
-        try:
-            memory_ctx = ""
-            if recalled:
-                memory_ctx = "\n\n[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n" + "\n".join(
-                    [f"- {m.title}: {m.content} (Sentimento: {m.emotionalWeight})" for m in recalled]
-                )
-            system_instruction = persona.systemPrompt + memory_ctx
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={req.apiKey.strip()}"
-            payload = {
-                "contents": [{"role": "user", "parts": [{"text": req.message}]}],
-                "systemInstruction": {"parts": [{"text": system_instruction}]},
-                "generationConfig": {"temperature": 0.85, "maxOutputTokens": 350}
-            }
+    # No key -> offline simulator. Key set -> Gemini, and failures are reported (no silent fallback).
+    api_key = (req.apiKey or "").strip()
+    if not api_key:
+        text, emotion = offline_simulator(req.message, persona, recalled)
+        return ChatResponse(response=text, emotion=emotion, recalledMemories=recalled_ids)
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidate = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                    clean_text, emotion = parse_emotion_tag(candidate)
-                    return ChatResponse(response=clean_text, emotion=emotion, recalledMemories=recalled_ids)
-        except Exception as e:
-            print(f"[Gemini Error]: {e}, falling back to Offline Simulator.")
+    memory_ctx = ""
+    if recalled:
+        memory_ctx = "\n\n[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n" + "\n".join(
+            [f"- {m.title}: {m.content} (Sentimento: {m.emotionalWeight})" for m in recalled]
+        )
 
-    # Offline Simulator Fallback
-    text, emotion = offline_simulator(req.message, persona, recalled)
-    return ChatResponse(response=text, emotion=emotion, recalledMemories=recalled_ids)
+    # Build alternating contents from history (must start with a user turn)
+    contents: List[Dict[str, Any]] = []
+    for turn in req.history[-MAX_HISTORY_MESSAGES:]:
+        role = "model" if turn.role == "model" else "user"
+        if contents and contents[-1]["role"] == role:
+            contents[-1]["parts"][0]["text"] += "\n" + turn.content
+        else:
+            contents.append({"role": role, "parts": [{"text": turn.content}]})
+    while contents and contents[0]["role"] == "model":
+        contents.pop(0)
+    contents.append({"role": "user", "parts": [{"text": req.message}]})
+
+    payload = {
+        "contents": contents,
+        "systemInstruction": {"parts": [{"text": persona.systemPrompt + memory_ctx}]},
+        # Newer models spend tokens "thinking"; 350 could leave nothing for the reply
+        "generationConfig": {"temperature": 0.9, "maxOutputTokens": 1024},
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            model = await resolve_model(client, api_key)
+            try:
+                data = await gemini_request(client, "POST", f"models/{model}:generateContent", api_key, payload)
+            except GeminiError as e:
+                if e.code != 404:
+                    raise
+                # Model retired since it was cached: pick again and retry once
+                model = await resolve_model(client, api_key, force=True)
+                data = await gemini_request(client, "POST", f"models/{model}:generateContent", api_key, payload)
+
+        candidate = (data.get("candidates") or [{}])[0]
+        parts = (candidate.get("content") or {}).get("parts") or []
+        raw = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+        if not raw:
+            reason = (data.get("promptFeedback") or {}).get("blockReason") or candidate.get("finishReason") or "desconhecido"
+            raise GeminiError(0, f"A IA retornou uma resposta vazia (motivo: {reason}).")
+
+        clean_text, emotion = parse_emotion_tag(raw)
+        return ChatResponse(response=clean_text, emotion=emotion, recalledMemories=recalled_ids, model=model)
+    except GeminiError as e:
+        print(f"[Gemini Error]: {e}")
+        message = f"[ERRO {e.code or 'REDE'}] {e.message}"
+        return ChatResponse(response=message, emotion="serious", recalledMemories=recalled_ids, error=message)
+    except httpx.HTTPError as e:
+        message = f"[ERRO REDE] Sem conexão com a Google: {e}"
+        return ChatResponse(response=message, emotion="serious", recalledMemories=recalled_ids, error=message)
 
 @app.post("/api/memories/{persona_id}")
 def add_memory(persona_id: str, req: AddMemoryRequest):
