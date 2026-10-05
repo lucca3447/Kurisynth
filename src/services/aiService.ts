@@ -180,11 +180,12 @@ export class AIService {
     // Check if OpenRouter key
     if (isOpenRouterKey(key)) {
       const candidates = [
-        'google/gemma-4-31b-it:free',
-        'google/gemma-4-26b-a4b-it:free',
         'nvidia/nemotron-3-super-120b-a12b:free',
         'nvidia/nemotron-3.5-lightning:free',
-        'meta-llama/llama-3.3-70b-instruct:free',
+        'nvidia/nemotron-3-ultra-550b-a55b:free',
+        'google/gemma-4-31b-it:free',
+        'google/gemma-4-26b-a4b-it:free',
+        'liquid/lfm-2.5-2.6b:free',
       ];
       let lastErr: any = null;
 
@@ -208,8 +209,16 @@ export class AIService {
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             const msg = errData?.error?.message || res.statusText || 'Erro no OpenRouter';
-            if (res.status === 404 || msg.toLowerCase().includes('unavailable for free')) {
-              console.warn(`[Amadeus] OpenRouter model ${model} unavailable for free, testing next...`);
+            const isRetryable =
+              res.status === 404 ||
+              res.status === 429 ||
+              res.status === 502 ||
+              res.status === 503 ||
+              msg.toLowerCase().includes('unavailable for free') ||
+              msg.toLowerCase().includes('rate-limited');
+
+            if (isRetryable) {
+              console.warn(`[Amadeus] OpenRouter model ${model} returned ${res.status}, testing next...`);
               continue;
             }
             throw new GeminiError(res.status, msg);
@@ -220,7 +229,7 @@ export class AIService {
           return { ok: true, model: `${cleanName} (OpenRouter)`, message: `Conectado ao OpenRouter (${cleanName})!` };
         } catch (err: any) {
           lastErr = err;
-          if (err instanceof GeminiError && err.code === 404) continue;
+          if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
           break;
         }
       }
@@ -372,11 +381,12 @@ export class AIService {
     const cachedModel = localStorage.getItem('amadeus_openrouter_model');
     const candidates = [
       ...(cachedModel ? [cachedModel] : []),
-      'google/gemma-4-31b-it:free',
-      'google/gemma-4-26b-a4b-it:free',
       'nvidia/nemotron-3-super-120b-a12b:free',
       'nvidia/nemotron-3.5-lightning:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'liquid/lfm-2.5-2.6b:free',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastErr: any = null;
@@ -402,7 +412,15 @@ export class AIService {
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           const msg = errData?.error?.message || res.statusText || 'Erro OpenRouter';
-          if (res.status === 404 || msg.toLowerCase().includes('unavailable for free')) {
+          const isRetryable =
+            res.status === 404 ||
+            res.status === 429 ||
+            res.status === 502 ||
+            res.status === 503 ||
+            msg.toLowerCase().includes('unavailable for free') ||
+            msg.toLowerCase().includes('rate-limited');
+
+          if (isRetryable) {
             console.warn(`[Amadeus] OpenRouter model ${model} returned ${res.status}, trying next candidate...`);
             continue;
           }
@@ -420,7 +438,7 @@ export class AIService {
         return { ...this.parseResponseTags(raw), model: `${cleanName} (OpenRouter)` };
       } catch (err: any) {
         lastErr = err;
-        if (err instanceof GeminiError && err.code === 404) continue;
+        if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
         throw err;
       }
     }
