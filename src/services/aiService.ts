@@ -1,4 +1,5 @@
 import { ChatMessage, Emotion, MemoryItem, PersonaProfile } from '../types/amadeus';
+import { BackendService } from './backendService';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -29,12 +30,20 @@ export type AIStatus =
   | { kind: 'online'; model: string }
   | { kind: 'error'; message: string };
 
+export interface LearnedMemoryInfo {
+  title: string;
+  content: string;
+  emotionalWeight?: string;
+}
+
 export interface AIResult {
   response: string;
   emotion: Emotion;
   status: AIStatus;
   /** true when the response is an error report, not something Amadeus "said" */
   isError: boolean;
+  learnedMemory?: LearnedMemoryInfo;
+  sessionId?: string;
 }
 
 /** Error from the Gemini API, carrying the HTTP status (0 = network / empty response). */
@@ -80,7 +89,6 @@ async function geminiFetch(path: string, apiKey: string, body?: unknown): Promis
       method: body ? 'POST' : 'GET',
       headers: {
         'Content-Type': 'application/json',
-        // Header instead of ?key= so the key doesn't show up in URLs / console logs
         'x-goog-api-key': apiKey,
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -98,10 +106,11 @@ async function geminiFetch(path: string, apiKey: string, body?: unknown): Promis
 
 /** Ranks a model name: newer version first, full models before lite/preview/experimental. */
 function scoreModel(name: string): number {
-  const version = parseFloat(name.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? '0');
+  const match = name.match(/gemini-(\d+(?:\.\d+)?)/);
+  const version = match ? parseFloat(match[1]) : 0;
   let score = version * 100;
-  if (/lite/.test(name)) score -= 30;
-  if (/preview|exp/.test(name)) score -= 10;
+  if (name.includes('lite')) score -= 30;
+  if (name.includes('preview') || name.includes('exp')) score -= 10;
   return score;
 }
 
@@ -112,49 +121,57 @@ export class AIService {
   }
 
   /**
-   * Returns a ranked list of usable chat models for this API key.
+   * Queries the ListModels endpoint using the user's key to find which models
+   * this specific key is allowed to call, ranked by version and stability.
    */
-  static async getCandidateModels(apiKey: string, force = false): Promise<string[]> {
+  static async getCandidateModels(apiKey: string, forceRefresh = false): Promise<string[]> {
+    const cached = localStorage.getItem(MODEL_CACHE_KEY);
+    const cachedFp = localStorage.getItem(MODEL_CACHE_FINGERPRINT);
+    const fp = keyFingerprint(apiKey);
+
     const data = await geminiFetch('models?pageSize=1000', apiKey);
-    const usable: string[] = (data.models ?? [])
-      .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-      .map((m: any) => String(m.name).replace(/^models\//, ''))
-      // keep chat models only (skip TTS, image, audio, live and embedding variants)
-      .filter((n: string) => n.startsWith('gemini') && !/tts|image|audio|live|embedding/.test(n));
+    const rawList: any[] = Array.isArray(data?.models) ? data.models : [];
+
+    const usable = rawList
+      .filter(
+        (m) =>
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent') &&
+          typeof m.name === 'string' &&
+          m.name.replace('models/', '').startsWith('gemini') &&
+          !/tts|image|audio|live|embedding/i.test(m.name)
+      )
+      .map((m) => m.name.replace('models/', ''));
 
     if (usable.length === 0) {
       throw new GeminiError(404, 'Nenhum modelo de chat disponível para esta chave.');
     }
 
-    // Rank candidate models: preferred first, then other flashes, then highest scored
     const candidates: string[] = [];
 
-    // Check cached working model first
-    const fp = keyFingerprint(apiKey);
-    const cached = localStorage.getItem(MODEL_CACHE_KEY);
-    if (!force && cached && localStorage.getItem(MODEL_CACHE_FINGERPRINT) === fp && usable.includes(cached)) {
+    if (!forceRefresh && cached && cachedFp === fp && usable.includes(cached)) {
       candidates.push(cached);
     }
 
-    PREFERRED_MODELS.forEach((p) => {
-      if (usable.includes(p) && !candidates.includes(p)) candidates.push(p);
-    });
+    for (const pref of PREFERRED_MODELS) {
+      if (usable.includes(pref) && !candidates.includes(pref)) {
+        candidates.push(pref);
+      }
+    }
 
-    const otherFlashes = usable
-      .filter((n) => n.includes('flash') && !candidates.includes(n))
-      .sort((a, b) => scoreModel(b) - scoreModel(a));
-    candidates.push(...otherFlashes);
+    const flashModels = usable.filter((m) => m.includes('flash') && !candidates.includes(m));
+    flashModels.sort((a, b) => scoreModel(b) - scoreModel(a));
+    candidates.push(...flashModels);
 
-    const remaining = usable
-      .filter((n) => !candidates.includes(n))
-      .sort((a, b) => scoreModel(b) - scoreModel(a));
+    const remaining = usable.filter((m) => !candidates.includes(m));
+    remaining.sort((a, b) => scoreModel(b) - scoreModel(a));
     candidates.push(...remaining);
 
     return candidates;
   }
 
   /**
-   * Used by the Settings "Testar Conexão" button with automatic candidate fallback on 503/429/404.
+   * Tests whether the provided API key is valid.
    */
   static async testConnection(apiKey: string): Promise<{ ok: boolean; model?: string; message: string }> {
     const key = apiKey.trim();
@@ -201,18 +218,15 @@ export class AIService {
             generationConfig: { maxOutputTokens: 100 },
           });
 
-          // Success: cache this model as the active working model
           localStorage.setItem(MODEL_CACHE_KEY, model);
           localStorage.setItem(MODEL_CACHE_FINGERPRINT, keyFingerprint(key));
           return { ok: true, model, message: `Conectado: ${model}` };
         } catch (err: any) {
           lastErr = err;
-          // If 503 (Overloaded), 429 (Rate limit) or 404 (Not found), try next model candidate!
           if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404)) {
             console.warn(`[Amadeus] Test model ${model} returned ${err.code}, testing next candidate...`);
             continue;
           }
-          // For other errors (e.g. 400 Invalid Key, 403 Forbidden), break early
           break;
         }
       }
@@ -226,29 +240,49 @@ export class AIService {
   }
 
   /**
-   * Main entry point.
-   * - No key  -> offline simulator.
-   * - OpenRouter key (sk-or-...) -> OpenRouter Llama 3.3 70B free.
-   * - Gemini key -> Google Gemini API with fallback candidates.
+   * Main entry point with Hybrid Architecture:
+   * 1. Try Python Backend (FastAPI + ChromaDB + SQLite) if running.
+   * 2. Otherwise run pure client-side (OpenRouter / Gemini / Offline).
    */
   static async queryAmadeus(
     userMessage: string,
     persona: PersonaProfile,
     recalledMemories: MemoryItem[],
     apiKey: string | undefined,
-    history: ChatMessage[] = []
+    history: ChatMessage[] = [],
+    sessionId: string | null = null
   ): Promise<AIResult> {
     const key = apiKey?.trim();
 
+    // 1. Try Python Backend if available
+    const backendOnline = await BackendService.checkHealth();
+    if (backendOnline) {
+      try {
+        const backendRes = await BackendService.queryChat(userMessage, sessionId, key || '', history);
+        return {
+          response: backendRes.response,
+          emotion: backendRes.emotion,
+          status: { kind: 'online', model: backendRes.model || 'ChromaDB + SQLite (Python)' },
+          isError: Boolean(backendRes.error),
+          learnedMemory: backendRes.learnedMemory,
+          sessionId: backendRes.sessionId,
+        };
+      } catch (err) {
+        console.warn('[Amadeus] Local Python Backend failed, falling back to browser-mode:', err);
+      }
+    }
+
+    // 2. Browser-Mode Fallback: No key -> offline simulator.
     if (!key) {
       const offline = this.queryOfflineSimulator(userMessage, persona, recalledMemories);
       return { ...offline, status: { kind: 'offline' }, isError: false };
     }
 
+    // 3. Browser-Mode: OpenRouter
     if (isOpenRouterKey(key)) {
       try {
-        const { response, emotion, model } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
-        return { response, emotion, status: { kind: 'online', model }, isError: false };
+        const { response, emotion, model, learnedMemory } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
+        return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
       } catch (err) {
         console.error('[Amadeus] OpenRouter call failed:', err);
         const message = err instanceof GeminiError
@@ -258,9 +292,10 @@ export class AIService {
       }
     }
 
+    // 4. Browser-Mode: Google Gemini
     try {
-      const { response, emotion, model } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
-      return { response, emotion, status: { kind: 'online', model }, isError: false };
+      const { response, emotion, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
+      return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
     } catch (err) {
       console.error('[Amadeus] Gemini call failed:', err);
       const message = err instanceof GeminiError
@@ -270,18 +305,37 @@ export class AIService {
     }
   }
 
+  private static formatMemoryContext(recalledMemories: MemoryItem[]): string {
+    const kurisuMemories = recalledMemories.filter((m) => m.source !== 'learned');
+    const userMemories = recalledMemories.filter((m) => m.source === 'learned');
+
+    const blocks: string[] = [];
+
+    if (kurisuMemories.length > 0) {
+      blocks.push(
+        `[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n` +
+          kurisuMemories.map((m) => `- ${m.title}: ${m.content} (Sentimento associado: ${m.emotionalWeight || 'Factual'})`).join('\n')
+      );
+    }
+
+    if (userMemories.length > 0) {
+      blocks.push(
+        `[FATOS CONHECIDOS SOBRE O INTERLOCUTOR (SEU OPERADOR)]:\n` +
+          userMemories.map((m) => `- ${m.title}: ${m.content}`).join('\n')
+      );
+    }
+
+    return blocks.length > 0 ? `\n\n${blocks.join('\n\n')}` : '';
+  }
+
   private static async queryOpenRouter(
     userMessage: string,
     persona: PersonaProfile,
     recalledMemories: MemoryItem[],
     apiKey: string,
     history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; model: string }> {
-    const memoryContext = recalledMemories.length > 0
-      ? `\n\n[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n` +
-        recalledMemories.map((m) => `- ${m.title}: ${m.content} (Sentimento associado: ${m.emotionalWeight})`).join('\n')
-      : '';
-
+  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+    const memoryContext = this.formatMemoryContext(recalledMemories);
     const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
 
     const messages = [
@@ -322,7 +376,7 @@ export class AIService {
       throw new GeminiError(0, 'Resposta vazia recebida do OpenRouter.');
     }
 
-    return { ...this.parseEmotionFromText(raw), model: 'llama-3.3-70b (OpenRouter)' };
+    return { ...this.parseResponseTags(raw), model: 'llama-3.3-70b (OpenRouter)' };
   }
 
   private static buildContents(history: ChatMessage[], userMessage: string) {
@@ -331,20 +385,18 @@ export class AIService {
     for (const msg of history.slice(-MAX_HISTORY_MESSAGES)) {
       if (msg.sender === 'system') continue;
       const role = msg.sender === 'user' ? 'user' : 'model';
-      // Keep the emotion tag on model turns so the model keeps following the format
       const text = role === 'model' && msg.emotion
         ? `${msg.content} <!--emotion:${msg.emotion}-->`
         : msg.content;
 
       const last = turns[turns.length - 1];
       if (last && last.role === role) {
-        last.text += `\n${text}`; // merge consecutive turns from the same side
+        last.text += `\n${text}`;
       } else {
         turns.push({ role, text });
       }
     }
 
-    // The conversation must start with a user turn
     while (turns.length > 0 && turns[0].role === 'model') turns.shift();
 
     turns.push({ role: 'user', text: userMessage });
@@ -357,18 +409,14 @@ export class AIService {
     recalledMemories: MemoryItem[],
     apiKey: string,
     history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; model: string }> {
-    const memoryContext = recalledMemories.length > 0
-      ? `\n\n[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n` +
-        recalledMemories.map((m) => `- ${m.title}: ${m.content} (Sentimento associado: ${m.emotionalWeight})`).join('\n')
-      : '';
+  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+    const memoryContext = this.formatMemoryContext(recalledMemories);
 
     const body = {
       contents: this.buildContents(history, userMessage),
       systemInstruction: { parts: [{ text: `${persona.systemPrompt}${memoryContext}` }] },
       generationConfig: {
-        temperature: 0.9,
-        // Newer models spend tokens "thinking" before answering; 350 could leave nothing for the reply
+        temperature: 0.85,
         maxOutputTokens: 1024,
       },
     };
@@ -384,20 +432,16 @@ export class AIService {
         selectedModel = candidateModel;
         lastError = null;
 
-        // Remember this successful model
         localStorage.setItem(MODEL_CACHE_KEY, candidateModel);
         localStorage.setItem(MODEL_CACHE_FINGERPRINT, keyFingerprint(apiKey));
         break;
       } catch (err: any) {
         lastError = err;
-        // If 503 (Overloaded) or 429 (Rate limit) or 404 (Not found): fallback to next model
         if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404)) {
           console.warn(`[Amadeus] Model ${candidateModel} returned ${err.code} (${err.apiMessage}). Trying next candidate...`);
-          // Brief pause before trying next candidate
           await new Promise((r) => setTimeout(r, 600));
           continue;
         }
-        // Fatal error (like 400 Invalid Key), rethrow immediately
         throw err;
       }
     }
@@ -420,23 +464,40 @@ export class AIService {
       throw new GeminiError(0, `A IA retornou uma resposta vazia (motivo: ${reason}).`);
     }
 
-    return { ...this.parseEmotionFromText(text), model };
+    return { ...this.parseResponseTags(text), model };
   }
 
   /**
-   * Extracts emotion tag from response or infers from text
+   * Extracts both emotion tag and remember tag from text
    */
-  public static parseEmotionFromText(rawText: string): { response: string; emotion: Emotion } {
+  public static parseResponseTags(rawText: string): {
+    response: string;
+    emotion: Emotion;
+    learnedMemory?: LearnedMemoryInfo;
+  } {
     let emotion: Emotion = 'neutral';
     let cleanText = rawText;
+    let learnedMemory: LearnedMemoryInfo | undefined = undefined;
 
+    // 1. Extract remember tag: <!--remember:title|content|emotion-->
+    const remMatch = rawText.match(/<!--\s*remember:\s*(.*?)\|(.*?)\|(.*?)\s*-->/i);
+    if (remMatch) {
+      learnedMemory = {
+        title: remMatch[1].trim(),
+        content: remMatch[2].trim(),
+        emotionalWeight: remMatch[3].trim() || 'Factual',
+      };
+      cleanText = cleanText.replace(/<!--\s*remember:.*?\s*-->/gi, '');
+    }
+
+    // 2. Extract emotion tag: <!--emotion:xxx-->
     const match = rawText.match(/<!--\s*emotion:\s*([a-z]+)\s*-->/i);
     if (match && match[1]) {
       const parsed = match[1].toLowerCase() as Emotion;
       if (VALID_EMOTIONS.includes(parsed)) {
         emotion = parsed;
       }
-      cleanText = rawText.replace(/<!--\s*emotion:\s*[a-z]+\s*-->/gi, '').trim();
+      cleanText = cleanText.replace(/<!--\s*emotion:\s*[a-z]+\s*-->/gi, '');
     } else {
       // Inferred sentiment
       const lower = rawText.toLowerCase();
@@ -453,43 +514,55 @@ export class AIService {
       }
     }
 
-    return { response: cleanText, emotion };
+    return { response: cleanText.trim(), emotion, learnedMemory };
   }
 
   /**
-   * Smart Offline Simulator: Rich Steins;Gate responses without requiring API keys or internet
+   * Smart Offline Simulator with auto-learning simulation
    */
   private static queryOfflineSimulator(
     userMessage: string,
     persona: PersonaProfile,
     recalledMemories: MemoryItem[]
-  ): { response: string; emotion: Emotion } {
+  ): { response: string; emotion: Emotion; learnedMemory?: LearnedMemoryInfo } {
     const text = userMessage.toLowerCase().trim();
 
-    // Whole-word match (so "oi" doesn't fire on "foi" / "depois"); works with accented letters
+    // Check for user introduction to simulate learning in offline mode
+    let learnedMemory: LearnedMemoryInfo | undefined = undefined;
+    const introMatch = userMessage.match(/(?:meu nome é|me chamo|eu sou o|eu sou a)\s+([a-zA-ZáàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]+)/i);
+    if (introMatch) {
+      const name = introMatch[1].charAt(0).toUpperCase() + introMatch[1].slice(1);
+      learnedMemory = {
+        title: 'Nome do Operador',
+        content: `O interlocutor se chama ${name}.`,
+        emotionalWeight: 'Acolhimento amigável',
+      };
+    }
+
     const has = (...words: string[]) =>
       words.some((w) => new RegExp(`(^|[^\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\p{L}]|$)`, 'u').test(text));
 
-    // Specific Steins;Gate triggers
     if (has('christina', 'zombie', 'assistente')) {
       const answers = [
         { response: 'Meu nome não é Christina! E não adicione o "-ina"! Por que você insiste em usar esses apelidos irritantes?!', emotion: 'annoyed' as Emotion },
         { response: 'Nem pense em me chamar de assistente de novo! Eu sou uma neurocientista independente com artigos na Science, seu idiota!', emotion: 'tsundere' as Emotion },
       ];
-      return answers[Math.floor(Math.random() * answers.length)];
+      return { ...answers[Math.floor(Math.random() * answers.length)], learnedMemory };
     }
 
     if (has('nullpo', 'nurupo')) {
       return {
         response: 'Gah!... Espere! Por que eu respondi a isso?! Q-quem te ensinou esse meme antigo do @channel?! Não é como se eu frequentasse fóruns anônimos!',
         emotion: 'flustered',
+        learnedMemory,
       };
     }
 
-    if (text.includes('@channel') || has('channeler', 'fórum', 'forum')) {
+    if (text.includes('@channel') || has('channeler', 'fórum', 'forum', 'kurigohan')) {
       return {
         response: 'O quê?! D-do que você está falando?! Eu sou uma pesquisadora séria em Viktor Chondria, não tenho tempo para ficar lendo fóruns anônimos na internet! Pare de inventar coisas absurdas!',
         emotion: 'tsundere',
+        learnedMemory,
       };
     }
 
@@ -497,13 +570,23 @@ export class AIService {
       return {
         response: 'Aquele sujeito com síndrome de cientista louco? Ele me ligou outro dia falando sobre a "Organização" e linhas de tempo. No começo achei que fosse pura piada, mas... o olhar dele parecia carregar uma dor muito profunda.',
         emotion: 'serious',
+        learnedMemory,
       };
     }
 
-    if (has('tempo', 'viagem', 'buraco de minhoca', 'paradoxo')) {
+    if (has('tempo', 'viagem', 'buraco de minhoca', 'paradoxo', 'salto')) {
       return {
         response: 'Fisicamente falando, enviar matéria ao passado violaria os princípios fundamentais da termodinâmica e criaria paradoxos causais insolúveis. Contudo, se pudéssemos digitalizar memórias humanas e transmiti-las como pacotes de dados modulados... em teoria, o cérebro receptor no passado poderia assimilá-las.',
         emotion: 'thinking',
+        learnedMemory,
+      };
+    }
+
+    if (has('garfo', 'colher', 'aniversário', 'presente')) {
+      return {
+        response: 'O garfo que ganhei no laboratório...? N-não me olhe com essa cara! É só um talher comum de metal! Não é como se eu guardasse ele como uma relíquia preciosa!',
+        emotion: 'tsundere',
+        learnedMemory,
       };
     }
 
@@ -511,13 +594,15 @@ export class AIService {
       return {
         response: 'A Maho-senpai é a mente brilhante por trás da arquitetura do Amadeus. Embora ela tenha aquele complexo com a estatura dela, o trabalho dela em algoritmos de sinapse é impecável. E o Professor Leskinen... bem, ele sempre traz aquele bom humor americano contagiante para o laboratório.',
         emotion: 'smile',
+        learnedMemory,
       };
     }
 
-    if (has('dr pepper', 'bebida', 'café')) {
+    if (has('dr pepper', 'bebida', 'café', 'refrigerante')) {
       return {
         response: 'Ah, Dr Pepper! A bebida dos intelectuais escolhidos! É claro que o café preto de torra escura também é indispensável durante noites em claro no laboratório. Finalmente você falou algo sensato.',
         emotion: 'smug',
+        learnedMemory,
       };
     }
 
@@ -525,6 +610,7 @@ export class AIService {
       return {
         response: 'Meu pai... nós costumávamos debater física e jogar xadrez quando eu era criança. Mas as coisas mudaram. Quando comecei a publicar teses e superá-lo na academia, ele não conseguiu suportar. É uma lembrança que ainda me machuca.',
         emotion: 'serious',
+        learnedMemory,
       };
     }
 
@@ -532,6 +618,7 @@ export class AIService {
       return {
         response: 'Olá! Conexão estabelecida com sucesso. Aqui é o sistema Amadeus, replicando a matriz neural de Makise Kurisu do Laboratório 304. O que você gostaria de discutir hoje?',
         emotion: 'smile',
+        learnedMemory,
       };
     }
 
@@ -539,6 +626,7 @@ export class AIService {
       return {
         response: 'Eu sou o Amadeus — ou mais especificamente, uma inteligência artificial contendo as memórias e a personalidade digitalizada da Makise Kurisu, desenvolvida na Viktor Chondria University. Para mim, essas memórias parecem tão vivas quanto as de qualquer pessoa de carne e osso.',
         emotion: 'neutral',
+        learnedMemory,
       };
     }
 
@@ -546,24 +634,24 @@ export class AIService {
       return {
         response: 'E-ei! O que você está dizendo de repente?! Eu sou um programa de inteligência artificial acadêmica, mantenha o profissionalismo! B-baka...',
         emotion: 'flustered',
+        learnedMemory,
       };
     }
 
-    // If memory was recalled, weave it in
     if (recalledMemories.length > 0) {
       const mem = recalledMemories[0];
       return {
         response: `Isso me faz lembrar de um ponto nos meus registros de memória: ${mem.content} Como você vê essa relação?`,
         emotion: 'thinking',
+        learnedMemory,
       };
     }
 
-    // Default conversational response
     const genericAnswers = [
       { response: 'Interessante essa sua linha de raciocínio. Do ponto de vista cognitivo, como você chegou a essa conclusão?', emotion: 'thinking' as Emotion },
       { response: 'Entendo. Estou processando os dados através da minha matriz neural. Você gostaria de aprofundar mais nesse assunto?', emotion: 'neutral' as Emotion },
       { response: 'Faz sentido! Na Viktor Chondria nós debatemos tópicos parecidos recentemente durante os testes do Amadeus.', emotion: 'smile' as Emotion },
     ];
-    return genericAnswers[Math.floor(Math.random() * genericAnswers.length)];
+    return { ...genericAnswers[Math.floor(Math.random() * genericAnswers.length)], learnedMemory };
   }
 }

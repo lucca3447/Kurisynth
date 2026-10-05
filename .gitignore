@@ -32,7 +32,9 @@ dist-ssr/
 # Raw unorganized extraction source (tracked in public/assets/sprites/kurisu)
 PC _ Computer - Steins;Gate 0 - Characters - Makise Kurisu (Amadeus)/
 
-# Python cache
+# Python cache & Local DB Storage (auto-seeded on startup)
 __pycache__/
 *.py[cod]
 *$py.class
+server/data/
+scratch/
