@@ -81,19 +81,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          {/* Section: Gemini API Key */}
+          {/* Section: Gemini & OpenRouter API Key */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
               <Key className="w-3.5 h-3.5 text-amadeus-accent" />
-              <span>CHAVE GOOGLE GEMINI (PLANO GRATUITO)</span>
+              <span>CHAVE DE API (GOOGLE GEMINI OU OPENROUTER)</span>
             </div>
             <p className="text-[11px] text-amadeus-muted leading-relaxed font-sans">
-              Insira sua chave do Google AI Studio para raciocínio em nuvem ilimitado no plano Free Tier (sem necessidade de cartão de crédito).
+              Suporta <strong>Google Gemini</strong> (<code className="text-amadeus-accent">AIzaSy...</code>) ou <strong>OpenRouter</strong> (<code className="text-amadeus-accent">sk-or-v1-...</code>) com Llama 3.3 70B gratuito.
             </p>
             <div className="flex items-center gap-2">
               <input
                 type="password"
-                placeholder="Cole sua API Key aqui (AIzaSy...)"
+                placeholder="Cole sua API Key aqui (AIzaSy... ou sk-or-...)"
                 value={tempApiKey}
                 onChange={(e) => {
                   setTempApiKey(e.target.value);
@@ -126,9 +126,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-1.5 text-[10px] text-amadeus-muted">
-              <HelpCircle className="w-3 h-3 text-amadeus-accent shrink-0" />
-              <span>Deixe em branco para usar o <strong>Simulador Offline Autônomo</strong> (R$ 0,00).</span>
+            <div className="flex flex-col gap-1 text-[10px] text-amadeus-muted pt-1">
+              <div className="flex items-center gap-1.5">
+                <HelpCircle className="w-3 h-3 text-amadeus-accent shrink-0" />
+                <span>Pegar chave grátis: <strong>Google AI Studio</strong> (aistudio.google.com) ou <strong>OpenRouter</strong> (openrouter.ai).</span>
+              </div>
+              <span className="text-[10px] text-amadeus-muted/80 pl-4">Deixe em branco para usar o <strong>Simulador Offline Autônomo</strong>.</span>
             </div>
           </div>
 

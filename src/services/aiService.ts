@@ -2,9 +2,17 @@ import { ChatMessage, Emotion, MemoryItem, PersonaProfile } from '../types/amade
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Preferred models, in order. If none are available for the key, the best
-// "flash" model returned by ListModels is used instead (never a single hardcoded name).
-const PREFERRED_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
+// Preferred Gemini models, in order. Prioritizing 2.5 and 1.5 avoids the temporary 503 spike on 3.8.
+const PREFERRED_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+];
+
+export function isOpenRouterKey(key: string): boolean {
+  return key.trim().startsWith('sk-or-');
+}
 
 const MODEL_CACHE_KEY = 'amadeus_model';
 const MODEL_CACHE_FINGERPRINT = 'amadeus_model_key_fp';
@@ -152,6 +160,36 @@ export class AIService {
     const key = apiKey.trim();
     if (!key) return { ok: false, message: 'Cole uma chave antes de testar.' };
 
+    // Check if OpenRouter key
+    if (isOpenRouterKey(key)) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${key}`,
+            'HTTP-Referer': 'http://localhost:5173',
+            'X-Title': 'Amadeus System',
+          },
+          body: JSON.stringify({
+            model: 'meta-llama/llama-3.3-70b-instruct:free',
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 10,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new GeminiError(res.status, errData?.error?.message || res.statusText || 'Erro no OpenRouter');
+        }
+
+        return { ok: true, model: 'llama-3.3-70b (OpenRouter Grátis)', message: 'Conectado ao OpenRouter (Llama 3.3 70B Gratuito)!' };
+      } catch (err: any) {
+        const message = err instanceof GeminiError ? `[${err.code || 'REDE'}] ${err.apiMessage}` : String(err);
+        return { ok: false, message };
+      }
+    }
+
     try {
       const candidates = await this.getCandidateModels(key, true);
       let lastErr: any = null;
@@ -190,7 +228,8 @@ export class AIService {
   /**
    * Main entry point.
    * - No key  -> offline simulator.
-   * - Key set -> Gemini. If it fails, the error is reported (no silent fallback).
+   * - OpenRouter key (sk-or-...) -> OpenRouter Llama 3.3 70B free.
+   * - Gemini key -> Google Gemini API with fallback candidates.
    */
   static async queryAmadeus(
     userMessage: string,
@@ -206,6 +245,19 @@ export class AIService {
       return { ...offline, status: { kind: 'offline' }, isError: false };
     }
 
+    if (isOpenRouterKey(key)) {
+      try {
+        const { response, emotion, model } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
+        return { response, emotion, status: { kind: 'online', model }, isError: false };
+      } catch (err) {
+        console.error('[Amadeus] OpenRouter call failed:', err);
+        const message = err instanceof GeminiError
+          ? `[ERRO ${err.code || 'REDE'}] ${err.friendly}`
+          : `[ERRO] ${String(err)}`;
+        return { response: message, emotion: 'serious', status: { kind: 'error', message }, isError: true };
+      }
+    }
+
     try {
       const { response, emotion, model } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
       return { response, emotion, status: { kind: 'online', model }, isError: false };
@@ -216,6 +268,61 @@ export class AIService {
         : `[ERRO] ${String(err)}`;
       return { response: message, emotion: 'serious', status: { kind: 'error', message }, isError: true };
     }
+  }
+
+  private static async queryOpenRouter(
+    userMessage: string,
+    persona: PersonaProfile,
+    recalledMemories: MemoryItem[],
+    apiKey: string,
+    history: ChatMessage[]
+  ): Promise<{ response: string; emotion: Emotion; model: string }> {
+    const memoryContext = recalledMemories.length > 0
+      ? `\n\n[MEMÓRIAS DIGITALIZADAS ATIVADAS DO SEU CÓRTEX]:\n` +
+        recalledMemories.map((m) => `- ${m.title}: ${m.content} (Sentimento associado: ${m.emotionalWeight})`).join('\n')
+      : '';
+
+    const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.slice(-MAX_HISTORY_MESSAGES).map((msg) => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.emotion ? `${msg.content} <!--emotion:${msg.emotion}-->` : msg.content,
+      })),
+      { role: 'user', content: userMessage },
+    ];
+
+    const model = 'meta-llama/llama-3.3-70b-instruct:free';
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'http://localhost:5173',
+        'X-Title': 'Amadeus System',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.85,
+        max_tokens: 1024,
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new GeminiError(res.status, errData?.error?.message || res.statusText || 'Erro OpenRouter');
+    }
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+    if (!raw) {
+      throw new GeminiError(0, 'Resposta vazia recebida do OpenRouter.');
+    }
+
+    return { ...this.parseEmotionFromText(raw), model: 'llama-3.3-70b (OpenRouter)' };
   }
 
   private static buildContents(history: ChatMessage[], userMessage: string) {
