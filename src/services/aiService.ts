@@ -180,10 +180,12 @@ export class AIService {
     // Check if OpenRouter key
     if (isOpenRouterKey(key)) {
       const candidates = [
-        'nvidia/nemotron-3.5-lightning:free',
         'google/gemma-4-31b-it:free',
         'google/gemma-4-26b-a4b-it:free',
         'liquid/lfm-2.5-2.6b:free',
+        'poolside/laguna-s-2.1:free',
+        'dots-studio/dots-3-note-preview:free',
+        'nvidia/nemotron-3.5-lightning:free',
         'nvidia/nemotron-3-super-120b-a12b:free',
         'nvidia/nemotron-3-ultra-550b-a55b:free',
       ];
@@ -379,15 +381,17 @@ export class AIService {
     ];
 
     const cachedModel = localStorage.getItem('amadeus_openrouter_model');
-    // If cached model is a pure reasoning model like nemotron-3-super, do not prioritize it
-    const validCache = cachedModel && !cachedModel.includes('super') ? cachedModel : null;
+    // If cached model is a nemotron/reasoning model, do not prioritize it
+    const validCache = cachedModel && !cachedModel.includes('nemotron') && !cachedModel.includes('super') ? cachedModel : null;
 
     const candidates = [
       ...(validCache ? [validCache] : []),
-      'nvidia/nemotron-3.5-lightning:free',
       'google/gemma-4-31b-it:free',
       'google/gemma-4-26b-a4b-it:free',
       'liquid/lfm-2.5-2.6b:free',
+      'poolside/laguna-s-2.1:free',
+      'dots-studio/dots-3-note-preview:free',
+      'nvidia/nemotron-3.5-lightning:free',
       'nvidia/nemotron-3-super-120b-a12b:free',
       'nvidia/nemotron-3-ultra-550b-a55b:free',
     ].filter((v, i, a) => a.indexOf(v) === i);
@@ -437,8 +441,8 @@ export class AIService {
         // Strictly do NOT fallback to internal reasoning / thinking as spoken character dialogue
         const cleanContent = this.stripThinkingTags(typeof contentVal === 'string' ? contentVal : '');
 
-        if (!cleanContent) {
-          console.warn(`[Amadeus] OpenRouter model ${model} returned empty content or reasoning-only, trying next candidate...`);
+        if (!cleanContent || this.isScratchpadOrReasoning(cleanContent)) {
+          console.warn(`[Amadeus] OpenRouter model ${model} returned empty, reasoning, or scratchpad, trying next candidate...`);
           continue;
         }
 
@@ -545,18 +549,66 @@ export class AIService {
   }
 
   /**
+   * Detects if the text is an internal AI scratchpad / chain-of-thought planning monologue
+   * rather than dialogue spoken by the character in Portuguese.
+   */
+  public static isScratchpadOrReasoning(text: string | null | undefined): boolean {
+    if (!text) return true;
+    const t = text.trim();
+    if (!t) return true;
+
+    const startPatterns = [
+      /^the user\b/i,
+      /^according to (?:the )?instructions\b/i,
+      /^i need to (?:respond|act|think|make|create|follow)\b/i,
+      /^i should (?:respond|act|think|make|create|follow)\b/i,
+      /^let me (?:think|draft|see|structure|analyze|break)\b/i,
+      /^let\'s (?:think|draft|see|structure|analyze|break)\b/i,
+      /^here is (?:my|the) (?:plan|thought|response)\b/i,
+      /^first, let's\b/i,
+      /^first, i should\b/i,
+      /^in this interaction\b/i,
+      /^to respond to the user\b/i,
+      /^thinking process:\b/i,
+      /^analysis:\b/i,
+      /^plan:\b/i,
+      /^o usu[áa]rio (?:quer|pediu|compartilhou)\b/i,
+      /^devo responder (?:como|em)\b/i,
+      /^preciso responder (?:como|em)\b/i,
+    ];
+
+    for (const pat of startPatterns) {
+      if (pat.test(t)) return true;
+    }
+
+    const metaPhrases = [
+      /according to the instructions/i,
+      /the user wants me to/i,
+      /i need to respond as makise kurisu/i,
+      /let me draft the response/i,
+      /so i should structure it as/i,
+      /now for the memory tag/i,
+      /let me think about the emotion/i,
+      /my dialogue text/i,
+    ];
+    const matches = metaPhrases.filter((p) => p.test(t)).length;
+    return matches >= 2;
+  }
+
+  /**
    * Strips internal chain-of-thought blocks such as <think>, <thought>, or unclosed thinking
    */
   public static stripThinkingTags(rawText: string | null | undefined): string {
     if (!rawText) return '';
     let text = rawText;
-    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-    text = text.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
-    text = text.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
-    text = text.replace(/<think>[\s\S]*$/gi, '');
-    text = text.replace(/<thought>[\s\S]*$/gi, '');
-    text = text.replace(/<reasoning>[\s\S]*$/gi, '');
-    text = text.replace(/\*{0,2}thinking(?:\s+process)?:\*{0,2}[\s\S]*?\n\n/gi, '');
+    text = text.replace(/<(think|thought|reasoning|reflection|internal|scratchpad)>[\s\S]*?<\/\1>/gi, '');
+    text = text.replace(/<(think|thought|reasoning|reflection|internal|scratchpad)>[\s\S]*$/gi, '');
+    text = text.replace(/\*{0,2}(?:thinking(?:\s+process)?|racioc[íi]nio|pensamento):\*{0,2}[\s\S]*?\n\n/gi, '');
+
+    if (this.isScratchpadOrReasoning(text)) {
+      return '';
+    }
+
     return text.trim();
   }
 
@@ -572,18 +624,21 @@ export class AIService {
     let cleanText = this.stripThinkingTags(rawText);
     let learnedMemory: LearnedMemoryInfo | undefined = undefined;
 
-    if (!cleanText) {
+    if (!cleanText || this.isScratchpadOrReasoning(cleanText)) {
       return { response: '', emotion: 'neutral' };
     }
 
     // 1. Extract remember tag: <!--remember:title|content|emotion-->
     const remMatch = cleanText.match(/<!--\s*remember:\s*(.*?)\|(.*?)\|(.*?)\s*-->/i);
     if (remMatch) {
-      learnedMemory = {
-        title: remMatch[1].trim(),
-        content: remMatch[2].trim(),
-        emotionalWeight: remMatch[3].trim() || 'Factual',
-      };
+      const title = remMatch[1].trim();
+      if (!/^(t[íi]tulo curto|fato memorizado|sentimento)$/i.test(title)) {
+        learnedMemory = {
+          title,
+          content: remMatch[2].trim(),
+          emotionalWeight: remMatch[3].trim() || 'Factual',
+        };
+      }
       cleanText = cleanText.replace(/<!--\s*remember:.*?\s*-->/gi, '');
     }
 
