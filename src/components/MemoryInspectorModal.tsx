@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MemoryItem, PersonaProfile } from '../types/amadeus';
 import { MemoryService } from '../services/memoryService';
-import { Database, Plus, X, Brain, Tag, Sparkles } from 'lucide-react';
+import { BackendService } from '../services/backendService';
+import { Brain, Plus, X, Tag, Sparkles, Download, Upload, Trash2, Database, ShieldCheck, UserCheck } from 'lucide-react';
 
 interface MemoryInspectorModalProps {
   isOpen: boolean;
@@ -18,16 +19,37 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
   recalledMemoryIds = [],
   onMemoryAdded,
 }) => {
+  const [filterSource, setFilterSource] = useState<'all' | 'canonical' | 'learned' | 'custom'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
+  const [backendDetails, setBackendDetails] = useState<string>('');
+
+  // Form states
   const [newTitle, setNewTitle] = useState('');
   const [newKeywords, setNewKeywords] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState<MemoryItem['category']>('anecdote');
   const [newEmotion, setNewEmotion] = useState('');
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      BackendService.checkHealth().then((health) => {
+        if (health) {
+          setBackendAvailable(true);
+          setBackendDetails(`ChromaDB (${health.chromaCount} vetores) + SQLite (${health.totalSessions} sessões)`);
+        } else {
+          setBackendAvailable(false);
+          setBackendDetails('Navegador Local (LocalStorage)');
+        }
+      });
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const handleAddMemory = (e: React.FormEvent) => {
+  const handleAddMemory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return;
 
@@ -36,12 +58,27 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
       .map((k) => k.trim())
       .filter(Boolean);
 
+    if (backendAvailable) {
+      try {
+        await BackendService.addMemory({
+          title: newTitle.trim(),
+          category: newCategory,
+          content: newContent.trim(),
+          emotionalWeight: newEmotion.trim() || 'Factual / Neutro',
+          source: 'custom',
+        });
+      } catch (err) {
+        console.warn('Backend add failed, saving to LocalStorage:', err);
+      }
+    }
+
     MemoryService.addMemory(persona.id, {
       title: newTitle.trim(),
       category: newCategory,
       triggerKeywords: keywords,
       content: newContent.trim(),
       emotionalWeight: newEmotion.trim() || 'Neutro / Factual',
+      source: 'custom',
     });
 
     setNewTitle('');
@@ -51,6 +88,69 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
     setShowAddForm(false);
     onMemoryAdded?.();
   };
+
+  const handleDeleteMemory = async (memoryId: string) => {
+    if (backendAvailable) {
+      try {
+        await BackendService.deleteMemory(memoryId);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    MemoryService.deleteMemory(persona.id, memoryId);
+    onMemoryAdded?.();
+  };
+
+  const handleClearLearned = () => {
+    if (confirm('Deseja realmente limpar todas as memórias aprendidas durante suas conversas? As memórias canônicas de Steins;Gate serão mantidas.')) {
+      MemoryService.clearLearnedMemories(persona.id);
+      onMemoryAdded?.();
+    }
+  };
+
+  const handleExportJSON = () => {
+    const json = MemoryService.exportMemoriesJSON(persona.id);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `amadeus_kurisu_cortex_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        const res = MemoryService.importMemoriesJSON(persona.id, content);
+        if (res.success) {
+          alert(`${res.count} memórias importadas com sucesso para o Córtex!`);
+          onMemoryAdded?.();
+        } else {
+          alert('Erro ao importar arquivo. Certifique-se de que é um JSON válido de memórias do Amadeus.');
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Filter memories
+  const filteredMemories = persona.memories.filter((mem) => {
+    if (filterSource === 'canonical') return mem.source === 'canonical' || !mem.source;
+    if (filterSource === 'learned') return mem.source === 'learned';
+    if (filterSource === 'custom') return mem.source === 'custom';
+    return true;
+  });
+
+  const learnedCount = persona.memories.filter((m) => m.source === 'learned').length;
+  const canonicalCount = persona.memories.filter((m) => m.source === 'canonical' || !m.source).length;
+  const customCount = persona.memories.filter((m) => m.source === 'custom').length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -65,8 +165,12 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
               <h2 className="text-sm font-bold text-amadeus-accent tracking-wider text-glow-green">
                 INSPETOR DE CÓRTEX & MEMÓRIAS // {persona.name.toUpperCase()}
               </h2>
-              <div className="text-[11px] text-amadeus-muted">
-                {persona.memories.length} BLOCOS DE MEMÓRIA DIGITALIZADOS
+              <div className="text-[11px] text-amadeus-muted flex items-center gap-2">
+                <span>{persona.memories.length} BLOCOS DE MEMÓRIA</span>
+                <span className="opacity-40">|</span>
+                <span className={backendAvailable ? 'text-amadeus-accent' : 'text-amber-400'}>
+                  {backendDetails}
+                </span>
               </div>
             </div>
           </div>
@@ -78,12 +182,100 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
           </button>
         </div>
 
+        {/* Action Bar (Filters + Export/Import) */}
+        <div className="px-6 py-2.5 border-b border-amadeus-border/60 bg-black/40 flex flex-wrap items-center justify-between gap-2">
+          {/* Source Tabs */}
+          <div className="flex items-center gap-1 text-[11px]">
+            <button
+              onClick={() => setFilterSource('all')}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                filterSource === 'all'
+                  ? 'bg-amadeus-accent text-black font-bold'
+                  : 'bg-amadeus-card text-amadeus-muted hover:text-white'
+              }`}
+            >
+              Todas ({persona.memories.length})
+            </button>
+            <button
+              onClick={() => setFilterSource('canonical')}
+              className={`px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                filterSource === 'canonical'
+                  ? 'bg-amadeus-accent text-black font-bold'
+                  : 'bg-amadeus-card text-amadeus-muted hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3 h-3" />
+              Canônicas ({canonicalCount})
+            </button>
+            <button
+              onClick={() => setFilterSource('learned')}
+              className={`px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                filterSource === 'learned'
+                  ? 'bg-purple-400 text-black font-bold'
+                  : 'bg-amadeus-card text-purple-300 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3 h-3" />
+              Aprendidas ({learnedCount})
+            </button>
+            {customCount > 0 && (
+              <button
+                onClick={() => setFilterSource('custom')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  filterSource === 'custom'
+                    ? 'bg-amber-400 text-black font-bold'
+                    : 'bg-amadeus-card text-amber-300 hover:text-white'
+                }`}
+              >
+                Custom ({customCount})
+              </button>
+            )}
+          </div>
+
+          {/* Tools */}
+          <div className="flex items-center gap-2 text-[11px]">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportFile}
+              accept=".json"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Importar memórias de um arquivo JSON"
+              className="p-1.5 rounded bg-amadeus-card border border-amadeus-border text-amadeus-muted hover:text-white hover:border-amadeus-accent transition-colors flex items-center gap-1"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Importar</span>
+            </button>
+            <button
+              onClick={handleExportJSON}
+              title="Exportar todo o córtex em arquivo JSON de backup"
+              className="p-1.5 rounded bg-amadeus-card border border-amadeus-border text-amadeus-muted hover:text-white hover:border-amadeus-accent transition-colors flex items-center gap-1"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Exportar</span>
+            </button>
+            {learnedCount > 0 && (
+              <button
+                onClick={handleClearLearned}
+                title="Limpar apenas as memórias aprendidas com você"
+                className="p-1.5 rounded bg-red-950/40 border border-red-800/40 text-red-400 hover:bg-red-900/60 hover:text-red-200 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Limpar Aprendidas</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Modal Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Add Memory Button / Toggle */}
           <div className="flex items-center justify-between">
             <div className="text-xs text-amadeus-muted">
-              Memórias ativas e histórico sináptico:
+              Mostrando {filteredMemories.length} memórias ativas:
             </div>
             <button
               onClick={() => setShowAddForm(!showAddForm)}
@@ -125,6 +317,7 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
                     <option value="relationship">Relação Interpessoal</option>
                     <option value="secret">Segredo / Fato Oculto</option>
                     <option value="biography">Biografia / Fato de Vida</option>
+                    <option value="user">Dado sobre o Operador</option>
                   </select>
                 </div>
                 <div>
@@ -139,99 +332,131 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
                 </div>
               </div>
               <div>
-                <label className="text-[11px] text-amadeus-muted block mb-1">Palavras-chave de ativação (separadas por vírgula):</label>
+                <label className="text-[11px] text-amadeus-muted block mb-1">Palavras-chave Gatilho (separadas por vírgula):</label>
                 <input
                   type="text"
-                  placeholder="Ex: terraço, noite, estrelas, futuro, promessa"
+                  placeholder="Ex: terraço, noite, futuro, promessa"
                   value={newKeywords}
                   onChange={(e) => setNewKeywords(e.target.value)}
                   className="w-full h-8 px-3 rounded bg-amadeus-panel border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
                 />
               </div>
               <div>
-                <label className="text-[11px] text-amadeus-muted block mb-1">Conteúdo da Memória (como ela se lembra):</label>
+                <label className="text-[11px] text-amadeus-muted block mb-1">Conteúdo Detalhado da Memória:</label>
                 <textarea
                   required
                   rows={3}
-                  placeholder="Descreva a memória na primeira pessoa ou como fato marcante..."
+                  placeholder="Descreva o evento, a tese ou o fato a ser consolidado no córtex da Kurisu..."
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
-                  className="w-full p-2.5 rounded bg-amadeus-panel border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent font-sans"
+                  className="w-full p-2.5 rounded bg-amadeus-panel border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent resize-none font-sans"
                 />
               </div>
-              <button
-                type="submit"
-                className="w-full h-8 rounded bg-amadeus-accent text-black font-bold text-xs hover:bg-[#00e676] transition-colors"
-              >
-                SALVAR E CONVERTER EM SINAPSE
-              </button>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded bg-amadeus-accent text-black font-bold text-xs hover:bg-amadeus-highlight transition-colors flex items-center gap-1.5"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Consolidar no Córtex</span>
+                </button>
+              </div>
             </form>
           )}
 
-          {/* Memory List */}
+          {/* Memories List */}
           <div className="space-y-3">
-            {persona.memories.map((mem) => {
-              const isTriggered = recalledMemoryIds.includes(mem.id);
-              return (
-                <div
-                  key={mem.id}
-                  className={`p-3.5 rounded-lg border transition-all ${
-                    isTriggered
-                      ? 'bg-amadeus-accent/10 border-amadeus-accent shadow-[0_0_15px_rgba(0,255,136,0.15)]'
-                      : 'bg-amadeus-card border-amadeus-border/60 hover:border-amadeus-border'
-                  }`}
-                >
-                  <div className="flex items-center justify-between pb-1.5 border-b border-amadeus-border/30 mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${isTriggered ? 'bg-amadeus-accent animate-ping' : 'bg-amadeus-border'}`} />
-                      <span className="font-bold text-xs text-[#e2f5ec]">
-                        {mem.title}
-                      </span>
-                      {isTriggered && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amadeus-accent text-black font-bold">
-                          ATIVADA NO CÓRTEX
+            {filteredMemories.length === 0 ? (
+              <div className="p-8 text-center text-xs text-amadeus-muted border border-dashed border-amadeus-border rounded-lg">
+                Nenhuma memória encontrada nesta categoria.
+              </div>
+            ) : (
+              filteredMemories.map((mem) => {
+                const isRecalled = recalledMemoryIds.includes(mem.id);
+                const isLearned = mem.source === 'learned';
+                const isCustom = mem.source === 'custom';
+
+                return (
+                  <div
+                    key={mem.id}
+                    className={`p-4 rounded-lg border transition-all ${
+                      isRecalled
+                        ? 'bg-amadeus-card/90 border-amadeus-accent shadow-[0_0_15px_rgba(0,255,136,0.15)] ring-1 ring-amadeus-accent/50'
+                        : isLearned
+                        ? 'bg-purple-950/20 border-purple-800/40 hover:border-purple-600/60'
+                        : isCustom
+                        ? 'bg-amber-950/20 border-amber-800/40 hover:border-amber-600/60'
+                        : 'bg-amadeus-card/50 border-amadeus-border hover:border-amadeus-border/80'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-white tracking-wide">
+                          {mem.title}
                         </span>
+
+                        {isLearned ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 font-bold border border-purple-600/40">
+                            ★ APRENDIDA COM VOCÊ
+                          </span>
+                        ) : isCustom ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/60 text-amber-300 font-bold border border-amber-600/40">
+                            ★ CUSTOMIZADA
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amadeus-border/40 text-amadeus-muted uppercase">
+                            CANÔNICA S;G
+                          </span>
+                        )}
+
+                        {isRecalled && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amadeus-accent/20 text-amadeus-accent border border-amadeus-accent/40 animate-pulse">
+                            SINAPSE ATIVA
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Delete button for custom / learned */}
+                      {(isLearned || isCustom) && (
+                        <button
+                          onClick={() => handleDeleteMemory(mem.id)}
+                          title="Excluir esta memória"
+                          className="text-amadeus-muted hover:text-red-400 transition-colors p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
-                    <span className="text-[10px] text-amadeus-muted uppercase">
-                      CAT: {mem.category}
-                    </span>
-                  </div>
 
-                  <p className="text-xs text-[#b8d6c8] font-sans leading-relaxed mb-2">
-                    {mem.content}
-                  </p>
+                    <p className="text-xs text-gray-300 font-sans leading-relaxed mb-3">
+                      {mem.content}
+                    </p>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-amadeus-muted pt-1 border-t border-amadeus-border/20">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <Tag className="w-3 h-3 text-amadeus-accent" />
-                      {mem.triggerKeywords.map((kw, idx) => (
-                        <span key={idx} className="px-1.5 py-0.5 rounded bg-amadeus-panel border border-amadeus-border/40 text-amadeus-accent">
-                          #{kw}
-                        </span>
-                      ))}
+                    <div className="flex flex-wrap items-center justify-between text-[11px] text-amadeus-muted pt-2 border-t border-amadeus-border/30 gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Tag className="w-3 h-3 text-amadeus-accent/70 shrink-0" />
+                        {mem.triggerKeywords && mem.triggerKeywords.length > 0 ? (
+                          mem.triggerKeywords.map((kw, i) => (
+                            <span key={i} className="text-[10px] bg-black/40 px-1.5 py-0.5 rounded text-amadeus-accent/80">
+                              #{kw}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-amadeus-muted/60">Sem palavras-chave específicas</span>
+                        )}
+                      </div>
+
+                      {mem.emotionalWeight && (
+                        <div className="text-[10px] text-amadeus-muted italic">
+                          Sentimento: <span className="text-gray-300">{mem.emotionalWeight}</span>
+                        </div>
+                      )}
                     </div>
-                    {mem.emotionalWeight && (
-                      <span className="text-[#a5c5b5] italic">
-                        Sentimento: {mem.emotionalWeight}
-                      </span>
-                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
-        </div>
-
-        {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-amadeus-border bg-amadeus-card flex items-center justify-between text-xs text-amadeus-muted">
-          <span>AMADEUS NEURAL STORAGE // LOCALHOST ENCRYPTED</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 rounded bg-amadeus-border/60 hover:bg-amadeus-border text-white text-xs transition-colors"
-          >
-            Fechar
-          </button>
         </div>
       </div>
     </div>

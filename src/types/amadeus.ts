@@ -10,13 +10,18 @@ export type Emotion =
   | 'smug'
   | 'flustered';
 
+export type MemorySource = 'canonical' | 'learned' | 'custom';
+
 export interface MemoryItem {
   id: string;
-  category: 'biography' | 'research' | 'relationship' | 'secret' | 'anecdote';
+  category: 'biography' | 'research' | 'relationship' | 'secret' | 'anecdote' | 'user';
   title: string;
   triggerKeywords: string[];
   content: string;
   emotionalWeight?: string;
+  source?: MemorySource;
+  createdAt?: number;
+  distance?: number;
 }
 
 export interface PersonaProfile {
@@ -40,6 +45,15 @@ export interface ChatMessage {
   recalledMemories?: string[];
 }
 
+export interface CallSession {
+  id: string;
+  startedAt: number;
+  endedAt?: number;
+  summary?: string;
+  messageCount?: number;
+  messages?: ChatMessage[];
+}
+
 export interface VoiceSettings {
   enabled: boolean;
   voiceURI: string | null;
@@ -55,4 +69,5 @@ export interface SystemConfig {
   model: string;
   scanlinesEnabled: boolean;
   activePersonaId: string;
+  useBackend: boolean;
 }
