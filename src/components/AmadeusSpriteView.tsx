@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Emotion } from '../types/amadeus';
 import { KURISU_SPRITES, preloadPrimarySprites } from '../services/spriteCatalog';
+import { SpeechService } from '../services/speechService';
 
 interface AmadeusSpriteViewProps {
   emotion: Emotion;
@@ -45,19 +46,22 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
     };
   }, []);
 
-  // Lip-Sync Cycle (when isSpeaking is true, mouth flaps)
+  // Acoustic & Syllable Lip-Sync Subscription
   useEffect(() => {
+    const unsubscribe = SpeechService.addLipSyncListener((isOpen) => {
+      if (isSpeaking) {
+        setMouthOpen(isOpen);
+      } else {
+        setMouthOpen(false);
+      }
+    });
+
     if (!isSpeaking) {
       setMouthOpen(false);
-      return;
     }
 
-    const interval = window.setInterval(() => {
-      setMouthOpen((prev) => !prev);
-    }, 140);
-
     return () => {
-      clearInterval(interval);
+      unsubscribe();
       setMouthOpen(false);
     };
   }, [isSpeaking]);

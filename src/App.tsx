@@ -78,6 +78,8 @@ export const App: React.FC = () => {
       volume: 1.0,
       autoSpeak: true,
       lang: 'pt-BR',
+      useNeural: true,
+      neuralVoice: 'pt-BR-FranciscaNeural',
     };
   });
 
@@ -118,6 +120,8 @@ export const App: React.FC = () => {
       rate: voiceSettings.rate,
       pitch: voiceSettings.pitch,
       volume: voiceSettings.volume,
+      useNeural: voiceSettings.useNeural !== false,
+      neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
       onStart: () => setIsSpeaking(true),
       onEnd: () => setIsSpeaking(false),
     });

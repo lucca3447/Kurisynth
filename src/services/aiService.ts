@@ -26,6 +26,7 @@ const MAX_HISTORY_MESSAGES = 20;
 const VALID_EMOTIONS: Emotion[] = [
   'neutral', 'smile', 'happy', 'serious', 'annoyed',
   'surprised', 'tsundere', 'thinking', 'smug', 'flustered',
+  'sad', 'puzzled', 'desperate',
 ];
 
 export type AIStatus =
@@ -868,6 +869,12 @@ export class AIService {
         emotion = 'smile';
       } else if (lower.includes('concordo') || lower.includes('exatamente')) {
         emotion = 'happy';
+      } else if (lower.includes('triste') || lower.includes('sinto muito') || lower.includes('lágrimas') || lower.includes('desculpe') || lower.includes('mayuri')) {
+        emotion = 'sad';
+      } else if (lower.includes('estranho') || lower.includes('como pode') || lower.includes('não faz sentido') || lower.includes('curioso') || lower.includes('inexplicável')) {
+        emotion = 'puzzled';
+      } else if (lower.includes('por favor') || lower.includes('não desista') || lower.includes('socorro') || lower.includes('urgente') || lower.includes('precisamos')) {
+        emotion = 'desperate';
       }
     }
 

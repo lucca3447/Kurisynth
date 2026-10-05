@@ -8,7 +8,10 @@ export type Emotion =
   | 'tsundere'
   | 'thinking'
   | 'smug'
-  | 'flustered';
+  | 'flustered'
+  | 'sad'
+  | 'puzzled'
+  | 'desperate';
 
 export type MemorySource = 'canonical' | 'learned' | 'custom';
 
@@ -62,6 +65,8 @@ export interface VoiceSettings {
   volume: number;
   autoSpeak: boolean;
   lang: string;
+  useNeural?: boolean;
+  neuralVoice?: string;
 }
 
 export interface SystemConfig {

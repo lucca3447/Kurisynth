@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { SpeechService } from '../services/speechService';
 
 interface AudioOscilloscopeProps {
   isActive: boolean;
@@ -46,47 +47,84 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
       }
       ctx.stroke();
 
-      // Determine activity amplitude
-      let baseAmplitude = 6;
-      let speed = 0.05;
+      // Check for real acoustic waveform from SpeechService AnalyserNode
+      const analyser = SpeechService.getAnalyser();
+      let hasRealAudio = false;
 
-      if (isActive) {
-        baseAmplitude = 24 + Math.sin(phase * 3) * 12;
-        speed = 0.14;
-      } else if (isListening) {
-        baseAmplitude = 18 + Math.sin(phase * 4) * 8;
-        speed = 0.12;
-      }
+      if (isActive && analyser) {
+        const timeData = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(timeData);
 
-      // Draw Primary Sine Wave (Bright Green)
-      ctx.beginPath();
-      ctx.strokeStyle = isActive ? '#00ff88' : isListening ? '#38e1ff' : '#00aa55';
-      ctx.lineWidth = 2;
-      ctx.shadowBlur = isActive || isListening ? 10 : 3;
-      ctx.shadowColor = isActive ? '#00ff88' : isListening ? '#38e1ff' : '#00aa55';
+        let variance = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          variance += Math.abs(timeData[i] - 128);
+        }
 
-      for (let x = 0; x < width; x++) {
-        // Multi-frequency harmonic wave
-        const wave1 = Math.sin(x * 0.03 + phase) * baseAmplitude;
-        const wave2 = Math.sin(x * 0.07 - phase * 1.5) * (baseAmplitude * 0.4);
-        const wave3 = Math.cos(x * 0.015 + phase * 0.5) * (baseAmplitude * 0.2);
+        if (variance > 40) {
+          hasRealAudio = true;
+          ctx.beginPath();
+          ctx.strokeStyle = '#00ff88';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#00ff88';
 
-        // Taper edges to zero at borders
-        const taper = Math.sin((x / width) * Math.PI);
-        const y = centerY + (wave1 + wave2 + wave3) * taper;
+          const sliceWidth = width / timeData.length;
+          let currentX = 0;
 
-        if (x === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+          for (let i = 0; i < timeData.length; i++) {
+            const v = timeData[i] / 128.0;
+            const y = (v * (height / 2));
+
+            if (i === 0) {
+              ctx.moveTo(currentX, y);
+            } else {
+              ctx.lineTo(currentX, y);
+            }
+            currentX += sliceWidth;
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
         }
       }
-      ctx.stroke();
 
-      // Reset shadow for performance
-      ctx.shadowBlur = 0;
+      // Draw aesthetic harmonic wave when not using real audio
+      if (!hasRealAudio) {
+        let baseAmplitude = 6;
+        let speed = 0.05;
 
-      phase += speed;
+        if (isActive) {
+          baseAmplitude = 24 + Math.sin(phase * 3) * 12;
+          speed = 0.14;
+        } else if (isListening) {
+          baseAmplitude = 18 + Math.sin(phase * 4) * 8;
+          speed = 0.12;
+        }
+
+        ctx.beginPath();
+        ctx.strokeStyle = isActive ? '#00ff88' : isListening ? '#38e1ff' : '#00aa55';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = isActive || isListening ? 10 : 3;
+        ctx.shadowColor = isActive ? '#00ff88' : isListening ? '#38e1ff' : '#00aa55';
+
+        for (let x = 0; x < width; x++) {
+          const wave1 = Math.sin(x * 0.03 + phase) * baseAmplitude;
+          const wave2 = Math.sin(x * 0.07 - phase * 1.5) * (baseAmplitude * 0.4);
+          const wave3 = Math.cos(x * 0.015 + phase * 0.5) * (baseAmplitude * 0.2);
+
+          const taper = Math.sin((x / width) * Math.PI);
+          const y = centerY + (wave1 + wave2 + wave3) * taper;
+
+          if (x === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      phase += 0.06;
       animationFrameId = requestAnimationFrame(render);
     };
 

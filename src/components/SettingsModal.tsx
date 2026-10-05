@@ -30,6 +30,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+
+  const handleTestVoice = async () => {
+    setIsTestingVoice(true);
+    const sampleText = voiceSettings.neuralVoice?.startsWith('ja-JP')
+      ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
+      : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
+    await SpeechService.speak(sampleText, {
+      voiceURI: voiceSettings.voiceURI,
+      rate: voiceSettings.rate,
+      pitch: voiceSettings.pitch,
+      volume: voiceSettings.volume,
+      useNeural: voiceSettings.useNeural !== false,
+      neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
+      onEnd: () => setIsTestingVoice(false),
+    });
+  };
 
   const handleTest = async () => {
     setIsTesting(true);
@@ -142,20 +159,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span>CONFIGURAÇÃO DE VOZ (SPEECH SYNTHESIS)</span>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[11px] text-amadeus-muted block">Voz do Sistema (Navegador):</label>
-              <select
-                value={voiceSettings.voiceURI || ''}
-                onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, voiceURI: e.target.value })}
-                className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+            {/* Neural vs System Voice selector */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-white font-medium block">Voz Neural de Alta Definição (Edge-TTS)</span>
+                  <span className="text-[10px] text-amadeus-muted">Voz humana com sincronia labial acústica</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={voiceSettings.useNeural !== false}
+                  onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, useNeural: e.target.checked })}
+                  className="accent-amadeus-accent w-4 h-4 cursor-pointer"
+                />
+              </div>
+
+              {voiceSettings.useNeural !== false ? (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-amadeus-muted block">Voz Neural (IA):</label>
+                  <select
+                    value={voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural'}
+                    onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, neuralVoice: e.target.value })}
+                    className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                  >
+                    <option value="pt-BR-FranciscaNeural">Francisca Neural (Português BR - Natural & Expressiva)</option>
+                    <option value="pt-BR-ThalitaNeural">Thalita Neural (Português BR - Jovem & Rápida)</option>
+                    <option value="pt-BR-ElzaNeural">Elza Neural (Português BR - Calma & Séria)</option>
+                    <option value="ja-JP-NanamiNeural">Nanami Neural (Japonês - Anime Original)</option>
+                    <option value="ja-JP-AoiNeural">Aoi Neural (Japonês - Calma)</option>
+                    <option value="en-US-JennyNeural">Jenny Neural (Inglês - Cientista Viktor Chondria)</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-amadeus-muted block">Voz do Sistema (Navegador):</label>
+                  <select
+                    value={voiceSettings.voiceURI || ''}
+                    onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, voiceURI: e.target.value })}
+                    className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                  >
+                    <option value="">Padrão do Sistema</option>
+                    {availableVoices.map((v) => (
+                      <option key={v.voiceURI} value={v.voiceURI}>
+                        {v.name} ({v.lang})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Sample audio preview button */}
+              <button
+                type="button"
+                onClick={handleTestVoice}
+                disabled={isTestingVoice}
+                className="w-full h-8 rounded border border-amadeus-accent/40 bg-amadeus-accent/10 hover:bg-amadeus-accent hover:text-black text-amadeus-accent text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
               >
-                <option value="">Padrão do Sistema</option>
-                {availableVoices.map((v) => (
-                  <option key={v.voiceURI} value={v.voiceURI}>
-                    {v.name} ({v.lang})
-                  </option>
-                ))}
-              </select>
+                {isTestingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isTestingVoice ? 'Reproduzindo Amostra...' : 'Ouvir Amostra de Voz'}</span>
+              </button>
             </div>
 
             <div className="flex items-center justify-between pt-1">
