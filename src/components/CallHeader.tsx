@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Wifi, Cpu, ShieldCheck } from 'lucide-react';
+import { AIStatus } from '../services/aiService';
 
 interface CallHeaderProps {
   isCalling: boolean;
-  hasApiKey: boolean;
+  aiStatus: AIStatus;
   personaName: string;
 }
 
 export const CallHeader: React.FC<CallHeaderProps> = ({
   isCalling,
-  hasApiKey,
+  aiStatus,
   personaName,
 }) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -80,9 +81,25 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
 
       {/* Right: Engine Indicator & Signal */}
       <div className="flex items-center gap-4 text-xs font-mono">
-        <div className="hidden sm:flex items-center gap-1.5 text-amadeus-muted">
-          <Cpu className="w-3.5 h-3.5 text-amadeus-accent" />
-          <span>{hasApiKey ? 'GEMINI 2.0 NEURAL LINK' : 'OFFLINE COGNITIVE SIMULATOR'}</span>
+        <div className="hidden sm:flex items-center gap-1.5">
+          {(() => {
+            const badge = {
+              online: { color: 'text-amadeus-accent border-amadeus-accent/50', dot: 'bg-amadeus-accent', label: `GEMINI: ${aiStatus.kind === 'online' ? aiStatus.model.toUpperCase() : ''}` },
+              pending: { color: 'text-amadeus-cyan border-amadeus-cyan/40', dot: 'bg-amadeus-cyan animate-pulse', label: 'GEMINI: AGUARDANDO 1ª RESPOSTA' },
+              error: { color: 'text-amadeus-red border-amadeus-red/60', dot: 'bg-amadeus-red animate-pulse', label: 'ERRO NA IA — VER CONFIGURAÇÕES' },
+              offline: { color: 'text-amadeus-amber border-amadeus-amber/40', dot: 'bg-amadeus-amber', label: 'OFFLINE (SEM CHAVE)' },
+            }[aiStatus.kind];
+            return (
+              <span
+                title={aiStatus.kind === 'error' ? aiStatus.message : undefined}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded border bg-amadeus-card text-[11px] ${badge.color}`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                <span>{badge.label}</span>
+              </span>
+            );
+          })()}
         </div>
 
         <div className="flex items-center gap-1.5 text-amadeus-accent">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Emotion, MemoryItem, PersonaProfile, VoiceSettings } from './types/amadeus';
+import { ChatMessage, Emotion, PersonaProfile, VoiceSettings } from './types/amadeus';
 import { MemoryService } from './services/memoryService';
-import { AIService } from './services/aiService';
+import { AIService, AIStatus } from './services/aiService';
 import { SpeechService } from './services/speechService';
 import { CallHeader } from './components/CallHeader';
 import { AmadeusSpriteView } from './components/AmadeusSpriteView';
@@ -11,25 +11,37 @@ import { ControlBar } from './components/ControlBar';
 import { MemoryInspectorModal } from './components/MemoryInspectorModal';
 import { SettingsModal } from './components/SettingsModal';
 import { IncomingCallScreen } from './components/IncomingCallScreen';
-import { Phone, RefreshCw } from 'lucide-react';
+import { Phone, MicOff, X } from 'lucide-react';
+
+const INITIAL_GREETING =
+  'Olá! Conexão estabelecida com a unidade Amadeus. Aqui é Makise Kurisu do Laboratório 304. O que você gostaria de discutir hoje?';
+
+const newId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 export const App: React.FC = () => {
   // Call state: 'incoming' | 'connected' | 'disconnected'
   const [callState, setCallState] = useState<'incoming' | 'connected' | 'disconnected'>('incoming');
-  
+
   // Persona and cognitive state
   const [persona, setPersona] = useState<PersonaProfile>(() => MemoryService.getPersona('kurisu'));
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
   const [recalledMemoryIds, setRecalledMemoryIds] = useState<string[]>([]);
-  
+
+  // Conversation history for the current call (sent to Gemini for multi-turn context)
+  const [history, setHistory] = useState<ChatMessage[]>([]);
+
   // Dialogue and speech state
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isListening, setIsListening] = useState<boolean>(false);
+  const [micError, setMicError] = useState<string | null>(null);
 
   // Configuration and persistence
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('amadeus_gemini_key') || '');
+  const [aiStatus, setAiStatus] = useState<AIStatus>(() =>
+    localStorage.getItem('amadeus_gemini_key') ? { kind: 'pending' } : { kind: 'offline' }
+  );
   const [scanlines, setScanlines] = useState<boolean>(() => {
     const val = localStorage.getItem('amadeus_scanlines');
     return val !== null ? val === 'true' : true;
@@ -60,8 +72,11 @@ export const App: React.FC = () => {
 
   // Save settings
   const handleSaveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('amadeus_gemini_key', key);
+    const trimmed = key.trim();
+    setApiKey(trimmed);
+    localStorage.setItem('amadeus_gemini_key', trimmed);
+    AIService.clearModelCache();
+    setAiStatus(trimmed ? { kind: 'pending' } : { kind: 'offline' });
   };
 
   const handleSaveVoiceSettings = (settings: VoiceSettings) => {
@@ -74,50 +89,16 @@ export const App: React.FC = () => {
     localStorage.setItem('amadeus_scanlines', String(enabled));
   };
 
-  // Initialize Speech Recognition on mount
-  useEffect(() => {
-    SpeechService.initRecognition(
-      (transcript) => {
-        if (transcript.trim()) {
-          handleSendMessage(transcript.trim());
-        }
-      },
-      (listening) => {
-        setIsListening(listening);
-      }
-    );
-  }, [persona, apiKey, voiceSettings]);
-
-  // Connect Call Handler
-  const handleAcceptCall = () => {
-    setCallState('connected');
-    const initialGreeting = 'Olá! Conexão estabelecida com a unidade Amadeus. Aqui é Makise Kurisu do Laboratório 304. O que você gostaria de discutir hoje?';
-    setCurrentSubtitle(initialGreeting);
-    setCurrentEmotion('smile');
-
-    if (voiceSettings.enabled && voiceSettings.autoSpeak) {
-      SpeechService.speak(initialGreeting, {
-        voiceURI: voiceSettings.voiceURI,
-        rate: voiceSettings.rate,
-        pitch: voiceSettings.pitch,
-        volume: voiceSettings.volume,
-        onStart: () => setIsSpeaking(true),
-        onEnd: () => setIsSpeaking(false),
-      });
-    }
-  };
-
-  // Disconnect Call Handler
-  const handleEndCall = () => {
-    SpeechService.stopSpeaking();
-    setIsSpeaking(false);
-    setIsListening(false);
-    setCallState('disconnected');
-  };
-
-  // Re-dial Call
-  const handleRestartCall = () => {
-    setCallState('incoming');
+  const speak = (text: string) => {
+    if (!voiceSettings.enabled || !voiceSettings.autoSpeak) return;
+    SpeechService.speak(text, {
+      voiceURI: voiceSettings.voiceURI,
+      rate: voiceSettings.rate,
+      pitch: voiceSettings.pitch,
+      volume: voiceSettings.volume,
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+    });
   };
 
   // Send message to Amadeus
@@ -133,30 +114,85 @@ export const App: React.FC = () => {
     setIsSpeaking(false);
 
     try {
-      // 2. Query Amadeus (Gemini API or Smart Offline Steins;Gate Engine)
-      const result = await AIService.queryAmadeus(userMessage, persona, matched, apiKey);
+      // 2. Query Amadeus (Gemini with conversation history, or offline simulator when there's no key)
+      const result = await AIService.queryAmadeus(userMessage, persona, matched, apiKey, history);
 
+      setAiStatus(result.status);
       setCurrentSubtitle(result.response);
       setCurrentEmotion(result.emotion);
 
-      // 3. Speak response with TTS if enabled
-      if (voiceSettings.enabled && voiceSettings.autoSpeak) {
-        SpeechService.speak(result.response, {
-          voiceURI: voiceSettings.voiceURI,
-          rate: voiceSettings.rate,
-          pitch: voiceSettings.pitch,
-          volume: voiceSettings.volume,
-          onStart: () => setIsSpeaking(true),
-          onEnd: () => setIsSpeaking(false),
-        });
+      if (result.isError) {
+        // Errors are shown, not spoken, and kept out of the history so a retry starts clean
+        return;
       }
-    } catch (err) {
-      console.error('Error during query:', err);
-      setCurrentSubtitle('Erro temporário no córtex digital. Verifique sua conexão ou tente novamente.');
-      setCurrentEmotion('annoyed');
+
+      setHistory((prev) => [
+        ...prev,
+        { id: newId(), sender: 'user', content: userMessage, timestamp: Date.now() },
+        {
+          id: newId(),
+          sender: 'amadeus',
+          content: result.response,
+          timestamp: Date.now(),
+          emotion: result.emotion,
+          recalledMemories: matched.map((m) => m.id),
+        },
+      ]);
+
+      // 3. Speak response with TTS if enabled
+      speak(result.response);
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // The speech recognizer is created once, so it calls the latest handler through a ref
+  const sendRef = useRef(handleSendMessage);
+  sendRef.current = handleSendMessage;
+
+  useEffect(() => {
+    SpeechService.initRecognition(
+      (transcript) => {
+        if (transcript.trim()) sendRef.current(transcript.trim());
+      },
+      (listening) => {
+        setIsListening(listening);
+        if (listening) setMicError(null);
+      },
+      (message) => setMicError(message)
+    );
+  }, []);
+
+  const handleToggleMic = () => {
+    if (!SpeechService.isRecognitionSupported()) {
+      setMicError('Este navegador não suporta reconhecimento de voz. Use Google Chrome ou Microsoft Edge.');
+      return;
+    }
+    SpeechService.toggleListening();
+  };
+
+  // Connect Call Handler
+  const handleAcceptCall = () => {
+    setCallState('connected');
+    setCurrentSubtitle(INITIAL_GREETING);
+    setCurrentEmotion('smile');
+    setHistory([
+      { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'smile' },
+    ]);
+    speak(INITIAL_GREETING);
+  };
+
+  // Disconnect Call Handler
+  const handleEndCall = () => {
+    SpeechService.stopSpeaking();
+    setIsSpeaking(false);
+    setIsListening(false);
+    setCallState('disconnected');
+  };
+
+  // Re-dial Call
+  const handleRestartCall = () => {
+    setCallState('incoming');
   };
 
   // Render Incoming Call Screen
@@ -201,7 +237,7 @@ export const App: React.FC = () => {
       {/* Top Header */}
       <CallHeader
         isCalling={true}
-        hasApiKey={Boolean(apiKey && apiKey.length > 10)}
+        aiStatus={aiStatus}
         personaName={persona.name}
       />
 
@@ -225,6 +261,17 @@ export const App: React.FC = () => {
 
       {/* Bottom Interface: Subtitles & Control Bar */}
       <div className="w-full bg-gradient-to-t from-[#040705] via-[#070c09]/95 to-transparent px-4 pb-2 z-30">
+        {/* Microphone problem banner */}
+        {micError && (
+          <div className="w-full max-w-4xl mx-auto mb-2 flex items-start gap-2 p-2.5 rounded-lg border border-amadeus-amber/50 bg-amadeus-amber/10 text-amadeus-amber text-xs font-sans">
+            <MicOff className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{micError}</span>
+            <button onClick={() => setMicError(null)} className="shrink-0 hover:text-white" title="Fechar aviso">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <SubtitleBox
           speakerName={persona.name}
           text={currentSubtitle}
@@ -236,7 +283,7 @@ export const App: React.FC = () => {
         <ControlBar
           onSendMessage={handleSendMessage}
           isListening={isListening}
-          onToggleMic={() => SpeechService.toggleListening()}
+          onToggleMic={handleToggleMic}
           voiceEnabled={voiceSettings.enabled}
           onToggleVoice={() => {
             const next = !voiceSettings.enabled;
