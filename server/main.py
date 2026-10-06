@@ -278,9 +278,9 @@ def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> tuple[
         elif re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)\b", u_lower):
             if emotion in ("neutral", "serious"):
                 emotion = "annoyed"
-        elif re.search(r"(?i)\b(cora|corada|vergonha|t[íi]mida|fofa|linda)\b", u_lower):
-            if emotion in ("neutral", "serious"):
-                emotion = "tsundere"
+        elif re.search(r"(?i)\b(cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)\b", u_lower):
+            if emotion in ("neutral", "serious", "tsundere"):
+                emotion = "flustered"
         elif re.search(r"(?i)\b(confusa|d[úu]vida|incline a cabe[çc]a)\b", u_lower):
             if emotion in ("neutral", "serious"):
                 emotion = "puzzled"
