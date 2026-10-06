@@ -889,7 +889,7 @@ export class AIService {
       if (/(?:d[eê]|d[aá]|um)?\s*(?:sorriso|sorria|sorri)/i.test(uLow)) emotion = 'smile';
       else if (/(?:pense|pensativa|reflita|m[aã]o no queixo|analise)/i.test(uLow)) emotion = 'thinking';
       else if (/(?:brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)/i.test(uLow)) emotion = 'annoyed';
-      else if (/(?:cora|corada|vergonha|t[íi]mida|fofa|linda)/i.test(uLow)) emotion = 'tsundere';
+      else if (/(?:cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)/i.test(uLow)) emotion = 'flustered';
       else if (/(?:confusa|d[úu]vida|incline a cabe[çc]a)/i.test(uLow)) emotion = 'puzzled';
       else if (/(?:surpresa|assustada|olhos arregalados)/i.test(uLow)) emotion = 'surprised';
       else if (/(?:triste|chore|chora|l[áa]grimas)/i.test(uLow)) emotion = 'sad';

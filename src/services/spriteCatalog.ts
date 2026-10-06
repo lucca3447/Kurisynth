@@ -49,14 +49,14 @@ export const KURISU_SPRITES: Record<Emotion, SpriteFrames> = {
     blink: '/assets/sprites/kurisu/CRS_JLE_40000102.png',
   },
   smug: {
-    idle: '/assets/sprites/kurisu/CRS_JLD_40000800.png',
-    talk: '/assets/sprites/kurisu/CRS_JLD_40000801.png',
-    blink: '/assets/sprites/kurisu/CRS_JLD_40000802.png',
-  },
-  flustered: {
     idle: '/assets/sprites/kurisu/CRS_JLD_40000b00.png',
     talk: '/assets/sprites/kurisu/CRS_JLD_40000b01.png',
     blink: '/assets/sprites/kurisu/CRS_JLD_40000b02.png',
+  },
+  flustered: {
+    idle: '/assets/sprites/kurisu/CRS_JLD_40000802.png',
+    talk: '/assets/sprites/kurisu/CRS_JLD_40000801.png',
+    blink: '/assets/sprites/kurisu/CRS_JLD_40000800.png',
   },
   sad: {
     idle: '/assets/sprites/kurisu/CRS_JLD_40000900.png',
