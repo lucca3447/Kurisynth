@@ -34,9 +34,19 @@ export function normalizeForSpeech(rawText: string): string {
   let text = rawText || '';
 
   // 1. Remove emotion and memory tags
-  text = text.replace(/<!--\s*(?:emotion|remember):.*?\s*-->/gi, '');
+  text = text.replace(/<!--\s*(?:emotion|remember):[^>]*-->/gi, '');
 
-  // 2. Remove markdown code blocks, bold, italic, quotes
+  // 2. Remove stage directions / asterisk actions (*sorri*, *olha para o lado*)
+  text = text.replace(/\*[^*]+\*/g, '');
+
+  // 3. Remove emoticons (:), :-(, :-D, xD, etc.)
+  text = text.replace(/[:;]-?[)(DPpOdD]/g, '');
+
+  // 4. Remove robotic narration phrases like "Aqui vai um sorriso para você"
+  text = text.replace(/^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*/i, 'U-um sorriso? Se você faz tanta questão... ');
+  text = text.replace(/^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*/i, '');
+
+  // 5. Remove markdown code blocks, bold, italic, quotes
   text = text.replace(/```[\s\S]*?```/g, '');
   text = text.replace(/`.*?`/g, '');
   text = text.replace(/[*_~#]/g, '');

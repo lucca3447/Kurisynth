@@ -198,10 +198,12 @@ def strip_thinking_tags(raw: Optional[str]) -> str:
 
     return text.strip()
 
-def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
+def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> tuple[str, str, Optional[LearnedMemoryInfo]]:
     """
     Parses both <!--emotion:xxx--> and <!--remember:title|content|emotion-->
     after stripping any internal reasoning/thinking blocks.
+    Sanitizes stage directions, handles piped/multi-token tags (e.g. happy|smile),
+    and maps user action intents to appropriate Kurisu sprites.
     """
     clean = strip_thinking_tags(raw)
     learned_info = None
@@ -220,29 +222,85 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
             learned_info = LearnedMemoryInfo(title=title, content=content, emotionalWeight=emotion)
         clean = re.sub(r"<!--remember:.*?-->", "", clean, flags=re.IGNORECASE)
 
-    # 2. Parse emotion tag
+    # 2. Parse emotion tag (flexible regex matching piped/multiple tokens like happy|smile)
     valid_emotions = [
         "neutral", "smile", "happy", "serious", "annoyed",
         "surprised", "tsundere", "thinking", "smug", "flustered",
         "sad", "puzzled", "desperate"
     ]
     emotion = "neutral"
-    emotion_match = re.search(r"<!--emotion:([a-z]+)-->", clean, re.IGNORECASE)
+
+    emotion_match = re.search(r"<!--\s*emotion:\s*([^>]+?)\s*-->", clean, re.IGNORECASE)
     if emotion_match:
-        emo = emotion_match.group(1).lower()
-        if emo in valid_emotions:
-            emotion = emo
-        clean = re.sub(r"<!--emotion:[a-z]+-->", "", clean, flags=re.IGNORECASE)
-    else:
-        # Heuristic inference if tag omitted
-        lower = clean.lower()
+        raw_emo_val = emotion_match.group(1).lower().strip()
+        # Handle cases like happy|smile, happy, smile, happy/smile
+        tokens = re.split(r"[\s|,;/]+", raw_emo_val)
+        for tok in tokens:
+            if tok in valid_emotions:
+                emotion = tok
+                break
+
+    # Infallible removal of any emotion tag variant
+    clean = re.sub(r"<!--\s*emotion:[^>]*-->", "", clean, flags=re.IGNORECASE)
+
+    # 3. Detect actions from asterisks stage directions before stripping (e.g. *sorri*, *fica pensativa*)
+    asterisk_matches = re.findall(r"\*([^*]+)\*", clean)
+    for act in asterisk_matches:
+        act_lower = act.lower()
+        if emotion in ("neutral", "serious"):
+            if any(w in act_lower for w in ["sorri", "sorriso", "alegre", "risad"]):
+                emotion = "smile"
+            elif any(w in act_lower for w in ["pensa", "pensativ", "olha para cima", "queixo"]):
+                emotion = "thinking"
+            elif any(w in act_lower for w in ["brava", "irritad", "emburrad", "cruza os braços"]):
+                emotion = "annoyed"
+            elif any(w in act_lower for w in ["cora", "vergonha", "tímid", "desvia o olhar"]):
+                emotion = "tsundere"
+            elif any(w in act_lower for w in ["surpres", "assustad", "choque"]):
+                emotion = "surprised"
+            elif any(w in act_lower for w in ["confus", "dúvida", "inclin"]):
+                emotion = "puzzled"
+            elif any(w in act_lower for w in ["triste", "chora", "lágrima"]):
+                emotion = "sad"
+
+    # Strip asterisks stage directions from dialogue
+    clean = re.sub(r"\*[^*]+\*", "", clean)
+
+    # 4. Context-aware inference from user intent (if emotion is neutral/unresolved)
+    if user_message:
+        u_lower = user_message.lower()
+        if re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "smile"
+        elif re.search(r"(?i)\b(pense|pensativa|reflita|m[aã]o no queixo|analise)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "thinking"
+        elif re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "annoyed"
+        elif re.search(r"(?i)\b(cora|corada|vergonha|t[íi]mida|fofa|linda)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "tsundere"
+        elif re.search(r"(?i)\b(confusa|d[úu]vida|incline a cabe[çc]a)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "puzzled"
+        elif re.search(r"(?i)\b(surpresa|assustada|olhos arregalados)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "surprised"
+        elif re.search(r"(?i)\b(triste|chore|chora|l[áa]grimas)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "sad"
+
+    # 5. Assistant dialogue sentiment fallback
+    lower = clean.lower()
+    if emotion in ("neutral", "serious"):
         if any(w in lower for w in ["baka", "idiota", "não me entenda mal", "christina"]):
             emotion = "tsundere"
         elif any(w in lower for w in ["o quê", "como assim", "?!"]):
             emotion = "surprised"
         elif any(w in lower for w in ["pesquisa", "teoria", "física", "sinapse"]):
             emotion = "thinking"
-        elif any(w in lower for w in ["obrigada", "hehe", "fico feliz"]):
+        elif any(w in lower for w in ["obrigada", "hehe", "fico feliz", "sorriso", "sorri"]):
             emotion = "smile"
         elif any(w in lower for w in ["triste", "sinto muito", "lágrimas", "desculpe", "mayuri"]):
             emotion = "sad"
@@ -251,7 +309,15 @@ def parse_tags(raw: Optional[str]) -> tuple[str, str, Optional[LearnedMemoryInfo
         elif any(w in lower for w in ["por favor", "não desista", "socorro", "urgente", "precisamos"]):
             emotion = "desperate"
 
-    return clean.strip(), emotion, learned_info
+    # 6. Sanitize robotic action narration phrases like "Aqui vai um sorriso para você"
+    clean = re.sub(r"(?i)^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*", "U-um sorriso? Se você faz tanta questão... mas não se acostume com isso! ", clean)
+    clean = re.sub(r"(?i)^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*", "", clean)
+
+    # Strip residual emoticons like :) :-D xD
+    clean = re.sub(r"[:;]-?[)(DPpOdD]", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+
+    return clean, emotion, learned_info
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 PREFERRED_MODELS = [
@@ -412,7 +478,17 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> tuple[s
         return "O garfo que ganhei no laboratório...? N-não me olhe com essa cara! É só um talher comum! Não é como se eu guardasse ele com todo o carinho do mundo!", "tsundere", learned
     if has("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite"):
         return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.get('name', 'Makise Kurisu')} do Laboratório 304. O que você gostaria de debater hoje?", "smile", learned
-    
+
+    # Direct action & expression triggers
+    if has("sorria", "sorriso", "sorri") or re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", t):
+        return "U-um sorriso? Por que você está me pedindo algo tão repentino do nada?! ...T-tudo bem, se você faz tanta questão, mas não se acostume com isso, tá?", "smile", learned
+    if has("pensativa", "pense", "queixo") or re.search(r"(?i)\b(pense|pensativa|m[aã]o no queixo|analise)\b", t):
+        return "Hmm... Se analisarmos a questão sob a ótica dos dados empíricos e da física de partículas, existem muitas variáveis fundamentais. Deixe-me pensar com calma.", "thinking", learned
+    if has("brava", "emburrada", "braços") or re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os)\b", t):
+        return "Humpf! Eu sou uma neurocientista com artigos na Science, não uma boneca de laboratório para fazer poses! Baka!", "annoyed", learned
+    if has("cora", "corada", "vergonha", "tímida", "fofa") or re.search(r"(?i)\b(cora|corada|vergonha|t[íi]mida|fofa)\b", t):
+        return "F-fofa?! Quem você está chamando de fofa?! N-não é como se eu estivesse envergonhada nem nada! É só o calor dos servidores do Amadeus!", "tsundere", learned
+
     if memories:
         mem = memories[0]
         return f"Isso me faz lembrar de um ponto nos meus registros de memória: {mem.get('content', '')} Como você vê essa relação?", "thinking", learned
@@ -420,7 +496,7 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> tuple[s
     # Check if a fine-tuning dataset exemplar matches the query
     closest = memory_store.search_exemplars(text, n_results=1)
     if closest:
-        parsed_reply, parsed_emo, _ = parse_tags(closest[0]["assistant"])
+        parsed_reply, parsed_emo, _ = parse_tags(closest[0]["assistant"], user_message=text)
         if parsed_reply:
             return parsed_reply, parsed_emo, learned
 
@@ -745,8 +821,8 @@ async def chat(req: ChatRequest):
                 raw_reply = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
                 used_model = selected_model
 
-        # Parse tags
-        clean_text, emotion, learned = parse_tags(raw_reply)
+        # Parse tags with user message context for action intent mapping
+        clean_text, emotion, learned = parse_tags(raw_reply, user_message=req.message)
 
         # Auto-consolidate learned memory into ChromaDB + SQLite
         if learned:
@@ -788,9 +864,11 @@ async def text_to_speech(req: TTSRequest):
             detail="edge-tts não está instalado. Instale no servidor com: pip install edge-tts"
         )
 
-    clean_text = re.sub(r"<!--emotion:[a-z]+-->", "", req.text, flags=re.IGNORECASE)
-    clean_text = re.sub(r"<!--remember:.*?-->", "", clean_text, flags=re.IGNORECASE)
-    clean_text = re.sub(r"[*_~`]", "", clean_text).strip()
+    clean_text = re.sub(r"<!--\s*emotion:[^>]*-->", "", req.text, flags=re.IGNORECASE)
+    clean_text = re.sub(r"<!--\s*remember:[^>]*-->", "", clean_text, flags=re.IGNORECASE)
+    clean_text = re.sub(r"\*[^*]+\*", "", clean_text)
+    clean_text = re.sub(r"[:;]-?[)(DPpOdD]", "", clean_text)
+    clean_text = re.sub(r"[*_~`#]", "", clean_text).strip()
 
     if not clean_text:
         raise HTTPException(status_code=400, detail="Texto não pode ser vazio para síntese de voz.")

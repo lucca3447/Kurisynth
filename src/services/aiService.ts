@@ -555,7 +555,7 @@ export class AIService {
         }
 
         localStorage.setItem('amadeus_groq_model', model);
-        return { ...this.parseResponseTags(cleanContent), model: `${model} (Groq LPU)` };
+        return { ...this.parseResponseTags(cleanContent, userMessage), model: `${model} (Groq LPU)` };
       } catch (err: any) {
         lastErr = err;
         if (err instanceof GeminiError && (err.code === 400 || err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
@@ -654,7 +654,7 @@ export class AIService {
 
         localStorage.setItem('amadeus_openrouter_model', model);
         const cleanName = model.replace(':free', '');
-        return { ...this.parseResponseTags(cleanContent), model: `${cleanName} (OpenRouter)` };
+        return { ...this.parseResponseTags(cleanContent, userMessage), model: `${cleanName} (OpenRouter)` };
       } catch (err: any) {
         lastErr = err;
         if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
@@ -751,7 +751,7 @@ export class AIService {
       throw new GeminiError(0, `A IA retornou uma resposta vazia (motivo: ${reason}).`);
     }
 
-    return { ...this.parseResponseTags(text), model };
+    return { ...this.parseResponseTags(text, userMessage), model };
   }
 
   /**
@@ -821,7 +821,10 @@ export class AIService {
   /**
    * Extracts both emotion tag and remember tag from text
    */
-  public static parseResponseTags(rawText: string | null | undefined): {
+  public static parseResponseTags(
+    rawText: string | null | undefined,
+    userMessage?: string
+  ): {
     response: string;
     emotion: Emotion;
     learnedMemory?: LearnedMemoryInfo;
@@ -848,24 +851,60 @@ export class AIService {
       cleanText = cleanText.replace(/<!--\s*remember:.*?\s*-->/gi, '');
     }
 
-    // 2. Extract emotion tag: <!--emotion:xxx-->
-    const match = cleanText.match(/<!--\s*emotion:\s*([a-z]+)\s*-->/i);
+    // 2. Extract emotion tag: handle piped or multiple values like happy|smile, smile/happy
+    const match = cleanText.match(/<!--\s*emotion:\s*([^>]+?)\s*-->/i);
     if (match && match[1]) {
-      const parsed = match[1].toLowerCase() as Emotion;
-      if (VALID_EMOTIONS.includes(parsed)) {
-        emotion = parsed;
+      const rawVal = match[1].toLowerCase().trim();
+      const tokens = rawVal.split(/[\s|,;/]+/);
+      for (const tok of tokens) {
+        if (VALID_EMOTIONS.includes(tok as Emotion)) {
+          emotion = tok as Emotion;
+          break;
+        }
       }
-      cleanText = cleanText.replace(/<!--\s*emotion:\s*[a-z]+\s*-->/gi, '');
-    } else {
-      // Inferred sentiment
-      const lower = cleanText.toLowerCase();
+    }
+    // Infallible removal of any emotion tag variant
+    cleanText = cleanText.replace(/<!--\s*emotion:[^>]*-->/gi, '');
+
+    // 3. Extract stage directions from asterisks before stripping (*sorri*, *fica pensativa*)
+    const asterisks = cleanText.match(/\*([^*]+)\*/g);
+    if (asterisks && (emotion === 'neutral' || emotion === 'serious')) {
+      for (const act of asterisks) {
+        const aLow = act.toLowerCase();
+        if (/sorri|sorriso|alegre|risad/.test(aLow)) emotion = 'smile';
+        else if (/pensa|pensativ|olha para cima|queixo/.test(aLow)) emotion = 'thinking';
+        else if (/brava|irritad|emburrad|cruza os braços/.test(aLow)) emotion = 'annoyed';
+        else if (/cora|vergonha|tímid|desvia o olhar/.test(aLow)) emotion = 'tsundere';
+        else if (/surpres|assustad|choque/.test(aLow)) emotion = 'surprised';
+        else if (/confus|dúvida|inclin/.test(aLow)) emotion = 'puzzled';
+        else if (/triste|chora|lágrima/.test(aLow)) emotion = 'sad';
+      }
+    }
+    // Strip asterisks stage directions from dialogue
+    cleanText = cleanText.replace(/\*[^*]+\*/g, '');
+
+    // 4. Context-aware inference from user intent (if emotion is neutral/unresolved)
+    if (userMessage && (emotion === 'neutral' || emotion === 'serious')) {
+      const uLow = userMessage.toLowerCase();
+      if (/(?:d[eê]|d[aá]|um)?\s*(?:sorriso|sorria|sorri)/i.test(uLow)) emotion = 'smile';
+      else if (/(?:pense|pensativa|reflita|m[aã]o no queixo|analise)/i.test(uLow)) emotion = 'thinking';
+      else if (/(?:brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)/i.test(uLow)) emotion = 'annoyed';
+      else if (/(?:cora|corada|vergonha|t[íi]mida|fofa|linda)/i.test(uLow)) emotion = 'tsundere';
+      else if (/(?:confusa|d[úu]vida|incline a cabe[çc]a)/i.test(uLow)) emotion = 'puzzled';
+      else if (/(?:surpresa|assustada|olhos arregalados)/i.test(uLow)) emotion = 'surprised';
+      else if (/(?:triste|chore|chora|l[áa]grimas)/i.test(uLow)) emotion = 'sad';
+    }
+
+    // 5. Inferred sentiment fallback from assistant words
+    const lower = cleanText.toLowerCase();
+    if (emotion === 'neutral' || emotion === 'serious') {
       if (lower.includes('baka') || lower.includes('idiota') || lower.includes('não me entenda mal') || lower.includes('christina')) {
         emotion = 'tsundere';
       } else if (lower.includes('o quê') || lower.includes('como assim') || lower.includes('?!')) {
         emotion = 'surprised';
       } else if (lower.includes('pesquisa') || lower.includes('teoria') || lower.includes('física') || lower.includes('sinapse')) {
         emotion = 'thinking';
-      } else if (lower.includes('obrigada') || lower.includes('hehe') || lower.includes('fico feliz')) {
+      } else if (lower.includes('obrigada') || lower.includes('hehe') || lower.includes('fico feliz') || lower.includes('sorriso') || lower.includes('sorri')) {
         emotion = 'smile';
       } else if (lower.includes('concordo') || lower.includes('exatamente')) {
         emotion = 'happy';
@@ -878,7 +917,13 @@ export class AIService {
       }
     }
 
-    return { response: cleanText.trim(), emotion, learnedMemory };
+    // 6. Sanitize robotic action narration phrases & emoticons
+    cleanText = cleanText.replace(/^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*/i, 'U-um sorriso? Se você faz tanta questão... mas não se acostume com isso! ');
+    cleanText = cleanText.replace(/^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*/i, '');
+    cleanText = cleanText.replace(/[:;]-?[)(DPpOdD]/g, '');
+    cleanText = cleanText.replace(/\s+/g, ' ').trim();
+
+    return { response: cleanText, emotion, learnedMemory };
   }
 
   /**
@@ -998,6 +1043,39 @@ export class AIService {
       return {
         response: 'E-ei! O que você está dizendo de repente?! Eu sou um programa de inteligência artificial acadêmica, mantenha o profissionalismo! B-baka...',
         emotion: 'flustered',
+        learnedMemory,
+      };
+    }
+
+    // Direct action & expression triggers
+    if (has('sorria', 'sorriso', 'sorri') || /(?:d[eê]|d[aá]|um)?\s*(?:sorriso|sorria|sorri)/i.test(text)) {
+      return {
+        response: 'U-um sorriso? Por que você está me pedindo algo tão repentino do nada?! ...T-tudo bem, se você faz tanta questão, mas não se acostume com isso, tá?',
+        emotion: 'smile',
+        learnedMemory,
+      };
+    }
+
+    if (has('pensativa', 'pense', 'queixo') || /(?:pense|pensativa|m[aã]o no queixo|analise)/i.test(text)) {
+      return {
+        response: 'Hmm... Se analisarmos a questão sob a ótica dos dados empíricos e da física de partículas, existem muitas variáveis fundamentais. Deixe-me estruturar as hipóteses.',
+        emotion: 'thinking',
+        learnedMemory,
+      };
+    }
+
+    if (has('brava', 'emburrada', 'braços') || /(?:brava|irritada|emburrada|cruze os bra[çc]os)/i.test(text)) {
+      return {
+        response: 'Humpf! Eu sou uma neurocientista com artigos na Science, não uma boneca de laboratório para fazer poses! Baka!',
+        emotion: 'annoyed',
+        learnedMemory,
+      };
+    }
+
+    if (has('cora', 'corada', 'vergonha', 'tímida') || /(?:cora|corada|vergonha|t[íi]mida)/i.test(text)) {
+      return {
+        response: 'F-fofa?! Quem você está chamando de fofa?! N-não é como se eu estivesse envergonhada nem nada! É só o calor dos servidores do Amadeus!',
+        emotion: 'tsundere',
         learnedMemory,
       };
     }
