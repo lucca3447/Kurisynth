@@ -287,9 +287,9 @@ export class SpeechService {
 
     this.stopSpeaking();
 
-    // Check if neural TTS should be used (default true if backend online)
-    const backendOnline = await BackendService.checkHealth().catch(() => false);
-    const useNeural = options.useNeural !== false && backendOnline;
+    // Check if neural TTS should be used (default true if backend online and edge-tts available)
+    const health = await BackendService.checkHealth().catch(() => null);
+    const useNeural = options.useNeural !== false && Boolean(health && health.edgeTtsAvailable !== false);
 
     if (useNeural) {
       try {

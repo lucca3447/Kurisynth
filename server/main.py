@@ -21,6 +21,16 @@ try:
 except ImportError:
     EDGE_TTS_AVAILABLE = False
 
+def check_edge_tts_available() -> bool:
+    global EDGE_TTS_AVAILABLE
+    if not EDGE_TTS_AVAILABLE:
+        try:
+            import edge_tts
+            EDGE_TTS_AVAILABLE = True
+        except ImportError:
+            EDGE_TTS_AVAILABLE = False
+    return EDGE_TTS_AVAILABLE
+
 BASE_DIR = Path(__file__).resolve().parent
 PERSONAS_DIR = BASE_DIR / "personas"
 PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
@@ -433,7 +443,7 @@ def health():
         "exemplarsCount": memory_store.exemplars_collection.count(),
         "totalMemories": len(memory_store.get_all_memories()),
         "totalSessions": len(memory_store.list_sessions()),
-        "edgeTtsAvailable": EDGE_TTS_AVAILABLE
+        "edgeTtsAvailable": check_edge_tts_available()
     }
 
 @app.get("/api/memories")
@@ -772,29 +782,36 @@ async def chat(req: ChatRequest):
 
 @app.post("/api/tts")
 async def text_to_speech(req: TTSRequest):
-    if not EDGE_TTS_AVAILABLE:
+    if not check_edge_tts_available():
         raise HTTPException(
             status_code=503, 
-            detail="edge-tts not installed."
+            detail="edge-tts não está instalado. Instale no servidor com: pip install edge-tts"
         )
 
     clean_text = re.sub(r"<!--emotion:[a-z]+-->", "", req.text, flags=re.IGNORECASE)
     clean_text = re.sub(r"<!--remember:.*?-->", "", clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r"[*_~`]", "", clean_text).strip()
 
-    communicate = edge_tts.Communicate(
-        text=clean_text,
-        voice=req.voice or "pt-BR-FranciscaNeural",
-        rate=req.rate or "+5%",
-        pitch=req.pitch or "+15Hz"
-    )
+    if not clean_text:
+        raise HTTPException(status_code=400, detail="Texto não pode ser vazio para síntese de voz.")
 
-    async def audio_generator():
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                yield chunk["data"]
+    try:
+        communicate = edge_tts.Communicate(
+            text=clean_text,
+            voice=req.voice or "pt-BR-FranciscaNeural",
+            rate=req.rate or "+5%",
+            pitch=req.pitch or "+15Hz"
+        )
 
-    return StreamingResponse(audio_generator(), media_type="audio/mpeg")
+        async def audio_generator():
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+
+        return StreamingResponse(audio_generator(), media_type="audio/mpeg")
+    except Exception as e:
+        print(f"[Amadeus Core] Erro na síntese Edge-TTS: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na síntese neural: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
