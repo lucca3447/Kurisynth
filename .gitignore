@@ -30,6 +30,7 @@ dist-ssr/
 !.env.example
 
 # Raw unorganized extraction source (tracked in public/assets/sprites/kurisu)
+assets/raw/
 PC _ Computer - Steins;Gate 0 - Characters - Makise Kurisu (Amadeus)/
 
 # Python cache & Local DB Storage (auto-seeded on startup)
@@ -38,3 +39,11 @@ __pycache__/
 *$py.class
 server/data/
 scratch/
+
+# RVC voice model & isolated runtime (do NOT publish)
+server/weights/
+server/kurisurvc/
+server/rvc_env/
+server/rvc_assets/
+*.wav
+server/*.wav
