@@ -40,6 +40,10 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> Tuple[s
         return "Aquele sujeito de jaleco branco? Ele me ligou outro dia falando sobre a 'Organização'. No começo achei que fosse pura piada, mas... seus olhos pareciam carregar uma dor muito profunda.", "serious", learned
     if has("garfo", "colher", "presente", "aniversário"):
         return "O garfo que ganhei no laboratório...? N-não me olhe com essa cara! É só um talher comum! Não é como se eu guardasse ele com todo o carinho do mundo!", "tsundere", learned
+    if has("divergência", "divergencia", "linha de mundo", "worldline", "nixie", "medidor"):
+        return "Se checarmos os tubos Nixie do Divergence Meter... estamos em 1.048596%! Qualquer valor acima de 1% nos mantém fora do controle do SERN. Vamos proteger esta linha de mundo juntos.", "thinking", learned
+    if has("promessa", "mindinho", "hipocampo"):
+        return "Tudo bem, mas é uma promessa de mindinho! Quebre-a e eu mesma vou cravar um eletrodo direto no seu hipocampo, entendeu bem?!", "tsundere", learned
     if has("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite"):
         return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.get('name', 'Makise Kurisu')} do Laboratório 304. O que você gostaria de debater hoje?", "smile", learned
 
