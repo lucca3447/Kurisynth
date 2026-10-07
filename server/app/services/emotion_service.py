@@ -1,0 +1,201 @@
+import re
+from typing import Optional, Tuple
+from app.schemas.chat import LearnedMemoryInfo
+
+VALID_EMOTIONS = [
+    "neutral", "smile", "happy", "serious", "annoyed",
+    "surprised", "tsundere", "thinking", "smug", "flustered",
+    "sad", "puzzled", "desperate"
+]
+
+def is_scratchpad_or_reasoning(text: Optional[str]) -> bool:
+    """
+    Detects if the text is an internal AI scratchpad / chain-of-thought planning monologue
+    rather than dialogue spoken by the character in Portuguese.
+    """
+    if not text:
+        return True
+    t = text.strip()
+    if not t:
+        return True
+
+    # 1. Obvious English or Portuguese meta-planning starts
+    start_patterns = [
+        r"^the user\b",
+        r"^according to (?:the )?instructions\b",
+        r"^i need to (?:respond|act|think|make|create|follow)\b",
+        r"^i should (?:respond|act|think|make|create|follow)\b",
+        r"^let me (?:think|draft|see|structure|analyze|break)\b",
+        r"^let\'s (?:think|draft|see|structure|analyze|break)\b",
+        r"^here is (?:my|the) (?:plan|thought|response)\b",
+        r"^first, let's\b",
+        r"^first, i should\b",
+        r"^in this interaction\b",
+        r"^to respond to the user\b",
+        r"^thinking process:\b",
+        r"^analysis:\b",
+        r"^plan:\b",
+        r"^o usu[áa]rio (?:quer|pediu|compartilhou)\b",
+        r"^devo responder (?:como|em)\b",
+        r"^preciso responder (?:como|em)\b",
+    ]
+    for pattern in start_patterns:
+        if re.search(pattern, t, re.IGNORECASE):
+            return True
+
+    # 2. Strong meta-analysis indicators
+    meta_phrases = [
+        r"according to the instructions",
+        r"the user wants me to",
+        r"i need to respond as makise kurisu",
+        r"let me draft the response",
+        r"so i should structure it as",
+        r"now for the memory tag",
+        r"let me think about the emotion",
+        r"my dialogue text",
+    ]
+    matches = sum(1 for p in meta_phrases if re.search(p, t, re.IGNORECASE))
+    if matches >= 2:
+        return True
+
+    return False
+
+def strip_thinking_tags(raw: Optional[str]) -> str:
+    """
+    Strips internal chain-of-thought blocks such as:
+    - <think>...</think>
+    - <thought>...</thought>
+    - <reasoning>...</reasoning>
+    - <reflection>...</reflection>
+    - <scratchpad>...</scratchpad>
+    - Unclosed thinking tags (when generation finishes inside thought)
+    - Markdown thought headers like **Thinking Process:**
+    - Rejects pure scratchpads/planning text
+    """
+    if not raw:
+        return ""
+    text = raw
+    text = re.sub(r"(?is)<(think|thought|reasoning|reflection|internal|scratchpad)>.*?</\1>", "", text)
+    text = re.sub(r"(?is)<(think|thought|reasoning|reflection|internal|scratchpad)>.*$", "", text)
+    text = re.sub(r"(?is)\*{0,2}(?:thinking(?:\s+process)?|racioc[íi]nio|pensamento):\*{0,2}.*?\n\n", "", text)
+    
+    if is_scratchpad_or_reasoning(text):
+        return ""
+
+    return text.strip()
+
+def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> Tuple[str, str, Optional[LearnedMemoryInfo]]:
+    """
+    Parses both <!--emotion:xxx--> and <!--remember:title|content|emotion-->
+    after stripping any internal reasoning/thinking blocks.
+    Sanitizes stage directions, handles piped/multi-token tags (e.g. happy|smile),
+    and maps user action intents to appropriate Kurisu sprites.
+    """
+    clean = strip_thinking_tags(raw)
+    learned_info = None
+
+    if not clean or is_scratchpad_or_reasoning(clean):
+        return "", "neutral", None
+
+    # 1. Parse remember tag
+    remember_match = re.search(r"<!--remember:(.*?)\|(.*?)\|(.*?)-->", clean, re.IGNORECASE)
+    if remember_match:
+        title = remember_match.group(1).strip()
+        content = remember_match.group(2).strip()
+        emotion = remember_match.group(3).strip()
+        # Protect against dummy placeholders
+        if not re.match(r"(?i)^(t[íi]tulo curto|fato memorizado|sentimento)$", title):
+            learned_info = LearnedMemoryInfo(title=title, content=content, emotionalWeight=emotion)
+        clean = re.sub(r"<!--remember:.*?-->", "", clean, flags=re.IGNORECASE)
+
+    # 2. Parse emotion tag (flexible regex matching piped/multiple tokens like happy|smile)
+    emotion = "neutral"
+
+    emotion_match = re.search(r"<!--\s*emotion:\s*([^>]+?)\s*-->", clean, re.IGNORECASE)
+    if emotion_match:
+        raw_emo_val = emotion_match.group(1).lower().strip()
+        # Handle cases like happy|smile, happy, smile, happy/smile
+        tokens = re.split(r"[\s|,;/]+", raw_emo_val)
+        for tok in tokens:
+            if tok in VALID_EMOTIONS:
+                emotion = tok
+                break
+
+    # Infallible removal of any emotion tag variant
+    clean = re.sub(r"<!--\s*emotion:[^>]*-->", "", clean, flags=re.IGNORECASE)
+
+    # 3. Detect actions from asterisks stage directions before stripping (e.g. *sorri*, *fica pensativa*)
+    asterisk_matches = re.findall(r"\*([^*]+)\*", clean)
+    for act in asterisk_matches:
+        act_lower = act.lower()
+        if emotion in ("neutral", "serious"):
+            if any(w in act_lower for w in ["sorri", "sorriso", "alegre", "risad"]):
+                emotion = "smile"
+            elif any(w in act_lower for w in ["pensa", "pensativ", "olha para cima", "queixo"]):
+                emotion = "thinking"
+            elif any(w in act_lower for w in ["brava", "irritad", "emburrad", "cruza os braços"]):
+                emotion = "annoyed"
+            elif any(w in act_lower for w in ["cora", "vergonha", "tímid", "desvia o olhar"]):
+                emotion = "tsundere"
+            elif any(w in act_lower for w in ["surpres", "assustad", "choque"]):
+                emotion = "surprised"
+            elif any(w in act_lower for w in ["confus", "dúvida", "inclin"]):
+                emotion = "puzzled"
+            elif any(w in act_lower for w in ["triste", "chora", "lágrima"]):
+                emotion = "sad"
+
+    # Strip asterisks stage directions from dialogue
+    clean = re.sub(r"\*[^*]+\*", "", clean)
+
+    # 4. Context-aware inference from user intent (if emotion is neutral/unresolved)
+    if user_message:
+        u_lower = user_message.lower()
+        if re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "smile"
+        elif re.search(r"(?i)\b(pense|pensativa|reflita|m[aã]o no queixo|analise)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "thinking"
+        elif re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "annoyed"
+        elif re.search(r"(?i)\b(cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)\b", u_lower):
+            if emotion in ("neutral", "serious", "tsundere"):
+                emotion = "flustered"
+        elif re.search(r"(?i)\b(confusa|d[úu]vida|incline a cabe[çc]a)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "puzzled"
+        elif re.search(r"(?i)\b(surpresa|assustada|olhos arregalados)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "surprised"
+        elif re.search(r"(?i)\b(triste|chore|chora|l[áa]grimas)\b", u_lower):
+            if emotion in ("neutral", "serious"):
+                emotion = "sad"
+
+    # 5. Assistant dialogue sentiment fallback
+    lower = clean.lower()
+    if emotion in ("neutral", "serious"):
+        if any(w in lower for w in ["baka", "idiota", "não me entenda mal", "christina"]):
+            emotion = "tsundere"
+        elif any(w in lower for w in ["o quê", "como assim", "?!"]):
+            emotion = "surprised"
+        elif any(w in lower for w in ["pesquisa", "teoria", "física", "sinapse"]):
+            emotion = "thinking"
+        elif any(w in lower for w in ["obrigada", "hehe", "fico feliz", "sorriso", "sorri"]):
+            emotion = "smile"
+        elif any(w in lower for w in ["triste", "sinto muito", "lágrimas", "desculpe", "mayuri"]):
+            emotion = "sad"
+        elif any(w in lower for w in ["estranho", "como pode", "não faz sentido", "curioso", "inexplicável"]):
+            emotion = "puzzled"
+        elif any(w in lower for w in ["por favor", "não desista", "socorro", "urgente", "precisamos"]):
+            emotion = "desperate"
+
+    # 6. Sanitize robotic action narration phrases like "Aqui vai um sorriso para você"
+    clean = re.sub(r"(?i)^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*", "U-um sorriso? Se você faz tanta questão... mas não se acostume com isso! ", clean)
+    clean = re.sub(r"(?i)^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*", "", clean)
+
+    # Strip residual emoticons like :) :-D xD
+    clean = re.sub(r"[:;]-?[)(DPpOdD]", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+
+    return clean, emotion, learned_info
