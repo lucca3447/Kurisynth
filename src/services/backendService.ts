@@ -168,4 +168,30 @@ export class BackendService {
     if (!res.ok) return [];
     return res.json();
   }
+
+  /**
+   * Fetches real-time Worldline Divergence from Divergence Meter
+   */
+  static async getDivergence(): Promise<{
+    divergence: string;
+    worldline: string;
+    source: string;
+    timestamp: number;
+  }> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/divergence`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      divergence: '1.048596',
+      worldline: 'Steins Gate (Linha Prometida)',
+      source: 'canonical_fallback',
+      timestamp: Date.now() / 1000,
+    };
+  }
 }
+
