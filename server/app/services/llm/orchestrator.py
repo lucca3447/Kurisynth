@@ -7,6 +7,7 @@ from app.db.memory_store import memory_store
 from app.services.persona_service import load_persona
 from app.services.emotion_service import strip_thinking_tags, is_scratchpad_or_reasoning, parse_tags
 from app.services.offline_simulator import offline_simulator
+from app.services.divergence_service import get_worldline_divergence
 from app.services.llm.gemini import GeminiError, gemini_request, get_candidate_models
 from app.services.llm.groq import get_groq_candidate_models
 from app.services.llm.openrouter import get_openrouter_candidate_models
@@ -83,6 +84,13 @@ class LLMOrchestrator:
             ex_lines = [f"Operador: \"{ex['user']}\"\nKurisu: \"{ex['assistant']}\"" for ex in exemplars]
             block = "[EXEMPLOS CANÔNICOS DE DIÁLOGO E TOM DA KURISU]:\n" + "\n\n".join(ex_lines)
             memory_ctx_blocks.append(block)
+
+        # 4. Telemetria do Medidor de Divergência (Steins;Gate Worldline Meter)
+        div_data = await get_worldline_divergence()
+        div_val = div_data.get("divergence", "1.048596")
+        div_wl = div_data.get("worldline", "Steins Gate")
+        block_div = f"[TELEMETRIA DO SISTEMA AMADEUS // DIVERGENCE METER]: Linha de Mundo Atual: {div_val}% ({div_wl})"
+        memory_ctx_blocks.append(block_div)
 
         memory_ctx = ("\n\n" + "\n\n".join(memory_ctx_blocks)) if memory_ctx_blocks else ""
         system_prompt = persona.get("systemPrompt", "") + memory_ctx
