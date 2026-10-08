@@ -1,9 +1,20 @@
-export type Emotion = 
+export type CanonicalEmotion = 
   | 'neutral'
-  | 'smile'
-  | 'happy'
-  | 'serious'
+  | 'wink'
   | 'annoyed'
+  | 'worried'
+  | 'disdain'
+  | 'happy'
+  | 'stern'
+  | 'blushing'
+  | 'look_side'
+  | 'eyes_closed'
+  | 'analytical'
+  | 'holding_back_tears';
+
+export type LegacyEmotion = 
+  | 'smile'
+  | 'serious'
   | 'surprised'
   | 'tsundere'
   | 'thinking'
@@ -12,6 +23,19 @@ export type Emotion =
   | 'sad'
   | 'puzzled'
   | 'desperate';
+
+export type Emotion = CanonicalEmotion | LegacyEmotion;
+
+export type CharacterPose = 'default' | 'crossed_arms' | 'backview';
+
+export type MouthState = 'closed' | 'half' | 'open';
+
+export interface SpriteExpressionFrames {
+  mouthClosed: string; // 00: mouth closed / idle
+  mouthHalf: string;   // 01: mouth half-open / transition
+  mouthOpen: string;   // 02: mouth fully open / apex
+  blinkFrame?: string; // Matching closed-eyes frame (slot 'a')
+}
 
 export type MemorySource = 'canonical' | 'learned' | 'custom';
 
@@ -45,6 +69,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   emotion?: Emotion;
+  pose?: CharacterPose;
   recalledMemories?: string[];
 }
 
