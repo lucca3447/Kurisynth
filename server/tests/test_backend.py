@@ -164,6 +164,25 @@ class TestAmadeusBackend(unittest.TestCase):
             resp, emo, _ = offline_simulator(trig, {"name": "Makise Kurisu"}, [])
             self.assertNotIn("baka", resp.lower(), f"Found 'baka' in trigger '{trig}': {resp}")
 
+    def test_12_anti_repetition_sanitizer(self):
+        from app.services.emotion_service import sanitize_repetitive_openers, parse_tags
+        # 1. Direct sanitizer check
+        t1 = "Não me entenda mal, mas ver você assim me incomoda..."
+        self.assertEqual(sanitize_repetitive_openers(t1), "Ver você assim me incomoda...")
+
+        t2 = "N-não me entenda mal! Confiança cega não substitui testes."
+        self.assertEqual(sanitize_repetitive_openers(t2), "Confiança cega não substitui testes.")
+
+        t3 = "Não me entenda mal: eu gosto de ciência de verdade."
+        self.assertEqual(sanitize_repetitive_openers(t3), "Eu gosto de ciência de verdade.")
+
+        # 2. Check within parse_tags with emotion
+        raw_msg = "Não me entenda mal, mas mexer nas minhas sinapses é perigoso! <!--emotion:tsundere-->"
+        clean_text, emo, _ = parse_tags(raw_msg)
+        self.assertEqual(clean_text, "Mexer nas minhas sinapses é perigoso!")
+        self.assertEqual(emo, "tsundere")
+
 if __name__ == "__main__":
     unittest.main()
+
 

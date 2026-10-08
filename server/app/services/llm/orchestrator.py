@@ -5,7 +5,7 @@ from app.core.config import MAX_HISTORY_MESSAGES
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.db.memory_store import memory_store
 from app.services.persona_service import load_persona
-from app.services.emotion_service import strip_thinking_tags, is_scratchpad_or_reasoning, parse_tags
+from app.services.emotion_service import strip_thinking_tags, is_scratchpad_or_reasoning, parse_tags, sanitize_repetitive_openers
 from app.services.offline_simulator import offline_simulator
 from app.services.divergence_service import get_worldline_divergence
 from app.services.llm.gemini import GeminiError, gemini_request, get_candidate_models
@@ -103,9 +103,11 @@ class LLMOrchestrator:
             if is_groq:
                 messages = [{"role": "system", "content": system_prompt}]
                 for turn in req.history[-MAX_HISTORY_MESSAGES:]:
+                    role = "user" if turn.role == "user" else "assistant"
+                    clean_content = sanitize_repetitive_openers(turn.content) if role == "assistant" else turn.content
                     messages.append({
-                        "role": "user" if turn.role == "user" else "assistant",
-                        "content": turn.content
+                        "role": role,
+                        "content": clean_content
                     })
                 messages.append({"role": "user", "content": req.message})
 
@@ -130,6 +132,8 @@ class LLMOrchestrator:
                                     "messages": messages,
                                     "temperature": 0.85,
                                     "max_tokens": 1024,
+                                    "presence_penalty": 0.4,
+                                    "frequency_penalty": 0.4,
                                 }
                             )
                             if res.status_code != 200:
@@ -172,9 +176,11 @@ class LLMOrchestrator:
             elif is_openrouter:
                 messages = [{"role": "system", "content": system_prompt}]
                 for turn in req.history[-MAX_HISTORY_MESSAGES:]:
+                    role = "user" if turn.role == "user" else "assistant"
+                    clean_content = sanitize_repetitive_openers(turn.content) if role == "assistant" else turn.content
                     messages.append({
-                        "role": "user" if turn.role == "user" else "assistant",
-                        "content": turn.content
+                        "role": role,
+                        "content": clean_content
                     })
                 messages.append({"role": "user", "content": req.message})
 
@@ -196,6 +202,8 @@ class LLMOrchestrator:
                                     "messages": messages,
                                     "temperature": 0.85,
                                     "max_tokens": 1024,
+                                    "presence_penalty": 0.4,
+                                    "frequency_penalty": 0.4,
                                     "include_reasoning": False
                                 }
                             )
@@ -239,10 +247,11 @@ class LLMOrchestrator:
                 contents: List[Dict[str, Any]] = []
                 for turn in req.history[-MAX_HISTORY_MESSAGES:]:
                     role = "model" if turn.role in ("model", "assistant") else "user"
+                    turn_text = sanitize_repetitive_openers(turn.content) if role == "model" else turn.content
                     if contents and contents[-1]["role"] == role:
-                        contents[-1]["parts"][0]["text"] += "\n" + turn.content
+                        contents[-1]["parts"][0]["text"] += "\n" + turn_text
                     else:
-                        contents.append({"role": role, "parts": [{"text": turn.content}]})
+                        contents.append({"role": role, "parts": [{"text": turn_text}]})
                 while contents and contents[0]["role"] == "model":
                     contents.pop(0)
                 contents.append({"role": "user", "parts": [{"text": req.message}]})
@@ -250,7 +259,12 @@ class LLMOrchestrator:
                 payload = {
                     "contents": contents,
                     "systemInstruction": {"parts": [{"text": system_prompt}]},
-                    "generationConfig": {"temperature": 0.85, "maxOutputTokens": 1024},
+                    "generationConfig": {
+                        "temperature": 0.85,
+                        "maxOutputTokens": 1024,
+                        "presencePenalty": 0.4,
+                        "frequencyPenalty": 0.4,
+                    },
                 }
 
                 async with httpx.AsyncClient(timeout=30.0) as client:
