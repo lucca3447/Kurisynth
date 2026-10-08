@@ -27,31 +27,40 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> Tuple[s
         return any(re.search(r'(?i)\b' + re.escape(w) + r'\b', t) for w in words)
 
     if has("christina", "assistente", "zombie"):
-        return "Meu nome não é Christina! E não adicione o '-ina'! Eu sou uma neurocientista independente com artigos na Science!", "annoyed", learned
+        return "Meu nome não é Christina! E não me chame de assistente nem adicione o '-ina'! Eu sou uma neurocientista independente com artigos na Science!", "annoyed", learned
     if has("nullpo", "nurupo"):
         return "Gah!... Espere! Por que eu respondi a isso?! Q-quem te ensinou esse meme antigo do @channel?! Não é como se eu frequentasse fóruns anônimos!", "flustered", learned
     if "@channel" in t or has("channeler", "fórum", "forum", "kurigohan"):
-        return "O quê?! D-do que você está falando?! Eu sou uma pesquisadora séria em Viktor Chondria, não tenho tempo para ficar lendo fóruns anônimos!", "tsundere", learned
+        return "O quê?! D-do que você está falando?! Eu sou uma pesquisadora séria em Viktor Chondria, não tenho tempo para ficar lendo fóruns anônimos! Você por acaso frequenta essas coisas?", "tsundere", learned
+    if has("barata", "fujiko", "inseto"):
+        return "U-uma barata?! Onde?! Não deixe ela chegar perto de mim! Tire isso de perto agora mesmo, eu estou avisando!", "desperate", learned
     if has("tempo", "viagem", "buraco de minhoca", "paradoxo", "salto"):
-        return "Fisicamente falando, enviar matéria ao passado violaria os princípios da causalidade e termodinâmica. Mas se memórias pudessem ser convertidas em pacotes de dados modulados... em teoria, poderiam alcançar o passado.", "thinking", learned
+        return "Fisicamente falando, enviar matéria ao passado violaria os princípios da causalidade e termodinâmica. Mas se memórias pudessem ser convertidas em pacotes de dados modulados... em teoria, poderiam alcançar o passado. Qual é a sua opinião sobre essa contradição?", "thinking", learned
     if has("dr pepper", "bebida", "café", "cafe", "refrigerante"):
-        return "Ah, Dr Pepper! A bebida dos intelectuais escolhidos! É claro que o café preto de torra escura também é indispensável durante noites em claro no laboratório.", "smug", learned
+        return "Ah, Dr Pepper! A bebida dos intelectuais escolhidos! É claro que o café preto de torra escura também é indispensável durante noites em claro no laboratório. Você prefere café ou Dr Pepper?", "smug", learned
     if has("okabe", "hououin", "kyouma", "rintaro"):
-        return "Aquele sujeito de jaleco branco? Ele me ligou outro dia falando sobre a 'Organização'. No começo achei que fosse pura piada, mas... seus olhos pareciam carregar uma dor muito profunda.", "serious", learned
+        return "Aquele sujeito esquisito de jaleco branco? Ele me ligou outro dia falando sobre a 'Organização'. No começo achei que fosse pura encenação, mas... seus olhos pareciam carregar uma dor muito profunda. Você conhece ele de onde?", "serious", learned
     if has("garfo", "colher", "presente", "aniversário"):
-        return "O garfo que ganhei no laboratório...? N-não me olhe com essa cara! É só um talher comum! Não é como se eu guardasse ele com todo o carinho do mundo!", "tsundere", learned
+        return "O garfo que ganhei no laboratório...? N-não me olhe com essa cara presunçosa! É só um talher perfeitamente comum! Não é como se eu guardasse ele como um tesouro nem nada!", "tsundere", learned
+    if has("divergência", "divergencia", "linha de mundo", "worldline", "nixie", "medidor"):
+        return "Se checarmos os tubos Nixie do Divergence Meter... estamos em 1.048596%! Qualquer valor acima de 1% nos mantém fora do controle do SERN. Vamos proteger esta linha de mundo juntos, certo?", "thinking", learned
+    if has("promessa", "mindinho", "hipocampo"):
+        return "Tudo bem, mas é uma promessa de mindinho! Quebre-a e eu mesma vou cravar um eletrodo direto no seu hipocampo, entendeu bem?!", "tsundere", learned
     if has("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite"):
-        return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.get('name', 'Makise Kurisu')} do Laboratório 304. O que você gostaria de debater hoje?", "smile", learned
+        return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.get('name', 'Makise Kurisu')} do Laboratório 304. Sobre o que você quer debater hoje?", "smile", learned
+    if has("aparência", "aparencia", "física", "fisica", "cabelo", "olhos", "altura", "peso", "roupa", "roupas", "vestuário", "vestuario") or (has("debug", "debugging") and has("física", "fisica", "corpo", "visual")):
+        return "Minha aparência? Por que você está tão interessado nisso do nada?! Se você precisa dos dados reais: tenho 1,65 m de altura, peso cerca de 45 kg, cabelos ruivos acastanhados longos até a cintura com franja aberta, e olhos violeta-azulados. Costumo vestir camisa branca com gravata vermelha frouxa, jaqueta cáqui caída nos braços, jaleco branco, shorts pretos e meia-calça. Meu avatar Amadeus é a projeção fiel desse meu corpo real, sem invenções futuristas!", "flustered", learned
 
     # Direct action & expression triggers
     if has("sorria", "sorriso", "sorri") or re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", t):
         return "U-um sorriso? Por que você está me pedindo algo tão repentino do nada?! ...T-tudo bem, se você faz tanta questão, mas não se acostume com isso, tá?", "smile", learned
     if has("pensativa", "pense", "queixo") or re.search(r"(?i)\b(pense|pensativa|m[aã]o no queixo|analise)\b", t):
-        return "Hmm... Se analisarmos a questão sob a ótica dos dados empíricos e da física de partículas, existem muitas variáveis fundamentais. Deixe-me pensar com calma.", "thinking", learned
+        return "Hmm... Se analisarmos a questão sob a ótica dos dados empíricos e da física de partículas, existem muitas variáveis fundamentais. O que você supõe como causa principal?", "thinking", learned
     if has("brava", "emburrada", "braços") or re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os)\b", t):
-        return "Humpf! Eu sou uma neurocientista com artigos na Science, não uma boneca de laboratório para fazer poses! Baka!", "annoyed", learned
-    if has("cora", "corada", "vergonha", "tímida", "fofa") or re.search(r"(?i)\b(cora|corada|vergonha|t[íi]mida|fofa)\b", t):
-        return "F-fofa?! Quem você está chamando de fofa?! N-não é como se eu estivesse envergonhada nem nada! É só o calor dos servidores do Amadeus!", "tsundere", learned
+        return "Humpf! Eu sou uma neurocientista com artigos na Science, não uma boneca de laboratório para fazer poses! Francamente...", "annoyed", learned
+    if has("cora", "corada", "vergonha", "tímida", "fofa", "linda") or re.search(r"(?i)\b(cora|corada|vergonha|t[íi]mida|fofa|linda)\b", t):
+        return "L-linda?! Q-quem você está chamando de fofa assim do nada?! N-não é como se eu estivesse envergonhada nem nada... é só o calor dos servidores do Amadeus! O que você quer afinal?!", "flustered", learned
+
 
     if memories:
         mem = memories[0]
