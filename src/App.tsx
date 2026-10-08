@@ -123,6 +123,9 @@ export const App: React.FC = () => {
       volume: voiceSettings.volume,
       useNeural: voiceSettings.useNeural !== false,
       neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
+      useRvc: Boolean(voiceSettings.useRvc),
+      rvcPitch: voiceSettings.rvcPitch ?? 0,
+      rvcIndexRate: voiceSettings.rvcIndexRate ?? 0.75,
       onStart: () => setIsSpeaking(true),
       onEnd: () => setIsSpeaking(false),
     });
