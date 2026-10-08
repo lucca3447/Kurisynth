@@ -1,28 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Emotion } from '../types/amadeus';
-import { KURISU_SPRITES, preloadPrimarySprites } from '../services/spriteCatalog';
+import React, { useState, useEffect, useRef } from 'react';
+import { CharacterPose, Emotion, MouthState } from '../types/amadeus';
+import { preloadPrimarySprites, resolveKurisuSprite } from '../services/spriteCatalog';
 import { SpeechService } from '../services/speechService';
 
 interface AmadeusSpriteViewProps {
   emotion: Emotion;
+  pose?: CharacterPose;
   isSpeaking: boolean;
   scanlines?: boolean;
 }
 
 export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
   emotion,
+  pose = 'default',
   isSpeaking,
   scanlines = true,
 }) => {
-  const [mouthOpen, setMouthOpen] = useState(false);
+  const [mouthState, setMouthState] = useState<MouthState>('closed');
   const [isBlinking, setIsBlinking] = useState(false);
+  const lipFlapIntervalRef = useRef<number | null>(null);
 
   // Preload sprites on initial mount
   useEffect(() => {
     preloadPrimarySprites();
   }, []);
 
-  // Autonomous Blinking Cycle (Every 3.5 to 6 seconds)
+  // Autonomous Blinking Cycle (Every 3.5 to 6 seconds when not speaking)
   useEffect(() => {
     let blinkTimeout: number;
     let blinkEndTimeout: number;
@@ -30,11 +33,12 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
     const scheduleNextBlink = () => {
       const delay = Math.floor(Math.random() * 2500) + 3500; // 3.5s - 6s
       blinkTimeout = window.setTimeout(() => {
+        // Only blink if not speaking
         setIsBlinking(true);
         blinkEndTimeout = window.setTimeout(() => {
           setIsBlinking(false);
           scheduleNextBlink();
-        }, 130); // blink duration 130ms
+        }, 130); // Authentic blink duration: 130ms
       }, delay);
     };
 
@@ -46,35 +50,59 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
     };
   }, []);
 
-  // Acoustic & Syllable Lip-Sync Subscription
+  // Acoustic & Syllable 3-Stage Lip-Sync (closed -> half -> open)
   useEffect(() => {
-    const unsubscribe = SpeechService.addLipSyncListener((isOpen) => {
-      if (isSpeaking) {
-        setMouthOpen(isOpen);
+    if (!isSpeaking) {
+      if (lipFlapIntervalRef.current) {
+        clearInterval(lipFlapIntervalRef.current);
+        lipFlapIntervalRef.current = null;
+      }
+      setMouthState('closed');
+      return;
+    }
+
+    // High-fidelity audio listener for amplitude and syllable triggers
+    const unsubscribe = SpeechService.addLipSyncListener((isOpen, amplitude) => {
+      if (!isSpeaking) {
+        setMouthState('closed');
+        return;
+      }
+
+      if (!isOpen) {
+        setMouthState('closed');
+      } else if (amplitude > 0.45) {
+        // High acoustic energy or tonic syllable: mouth open (02)
+        setMouthState('open');
       } else {
-        setMouthOpen(false);
+        // Medium acoustic energy or transition: mouth half (01)
+        setMouthState('half');
       }
     });
 
-    if (!isSpeaking) {
-      setMouthOpen(false);
-    }
+    // Fluid secondary lip-flap animator for smooth cadence during speech
+    let flapStep = 0;
+    lipFlapIntervalRef.current = window.setInterval(() => {
+      if (!isSpeaking) return;
+      flapStep = (flapStep + 1) % 4;
+      // Cycle: closed (00) -> half (01) -> open (02) -> half (01)
+      const states: MouthState[] = ['closed', 'half', 'open', 'half'];
+      setMouthState(states[flapStep]);
+    }, 120);
 
     return () => {
       unsubscribe();
-      setMouthOpen(false);
+      if (lipFlapIntervalRef.current) {
+        clearInterval(lipFlapIntervalRef.current);
+        lipFlapIntervalRef.current = null;
+      }
+      setMouthState('closed');
     };
   }, [isSpeaking]);
 
-  // Determine current image frame based on emotion, speech, and blink
-  const spriteSet = KURISU_SPRITES[emotion] || KURISU_SPRITES.neutral;
-
-  let currentFrameUrl = spriteSet.idle;
-  if (isSpeaking && mouthOpen) {
-    currentFrameUrl = spriteSet.talk;
-  } else if (isBlinking && !isSpeaking) {
-    currentFrameUrl = spriteSet.blink;
-  }
+  // Determine current image frame based on canonical matrix, pose, speech, and blink
+  // Active blink is suppressed while speaking to preserve lip-sync stability
+  const activeBlinking = isBlinking && !isSpeaking;
+  const currentFrameUrl = resolveKurisuSprite(emotion, mouthState, activeBlinking, pose);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#060a08] via-[#09110d] to-[#040806]">
