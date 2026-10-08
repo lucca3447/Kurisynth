@@ -2,7 +2,7 @@
 
 A full-stack, multimodal conversational AI application featuring interactive sprite animations, audio-reactive procedural lip-sync, acoustic waveform visualization, local Retrieval-Augmented Generation (RAG), and multi-provider LLM orchestration.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -272,4 +272,4 @@ npx tsc --noEmit
 
 - *Steins;Gate*, *Steins;Gate 0*, the character **Makise Kurisu**, related concepts, names, and visual novel assets are the intellectual property of **MAGES. Inc. / 5pb. / Chiyomaru Shikura**.
 - This project is an independent, non-commercial open-source software project developed for educational, research, and non-profit experimentation purposes under Fair Use.
-- Software is provided under the [MIT License](LICENSE) "as is", without warranty of any kind.
+- Software is provided under the [GNU General Public License v3](LICENSE) "as is", without warranty of any kind.
