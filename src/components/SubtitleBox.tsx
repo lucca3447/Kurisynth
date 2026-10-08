@@ -11,19 +11,31 @@ interface SubtitleBoxProps {
 }
 
 const EMOTION_LABELS: Record<Emotion, { label: string; color: string }> = {
-  neutral: { label: 'Neutral / Focused', color: 'text-amadeus-muted border-amadeus-border' },
-  smile: { label: 'Pleasant / Friendly', color: 'text-[#86efac] border-[#22c55e]/40' },
-  happy: { label: 'Happy / Enthusiastic', color: 'text-amadeus-accent border-amadeus-accent/50' },
-  serious: { label: 'Analytical / Science', color: 'text-amadeus-cyan border-amadeus-cyan/40' },
-  annoyed: { label: 'Annoyed / Pouting', color: 'text-amadeus-amber border-amadeus-amber/40' },
-  surprised: { label: 'Surprised / Shocked', color: 'text-[#f472b6] border-[#ec4899]/40' },
-  tsundere: { label: 'Tsundere / Flustered', color: 'text-amadeus-red border-amadeus-red/50' },
-  thinking: { label: 'Hypothesizing / Deep Thought', color: 'text-[#38bdf8] border-[#0ea5e9]/40' },
-  smug: { label: 'Smug / Confident', color: 'text-[#facc15] border-[#eab308]/40' },
-  flustered: { label: 'Embarrassed / Defensive', color: 'text-[#fb7185] border-[#f43f5e]/40' },
-  sad: { label: 'Melancholic / Vulnerable', color: 'text-[#93c5fd] border-[#3b82f6]/40' },
-  puzzled: { label: 'Puzzled / Skeptical', color: 'text-[#c084fc] border-[#a855f7]/40' },
-  desperate: { label: 'Emphatic / Intense', color: 'text-[#f87171] border-[#ef4444]/50' },
+  // Canonical 12
+  neutral: { label: 'Neutra / Focada', color: 'text-amadeus-muted border-amadeus-border' },
+  wink: { label: 'Piscadela / Descontraída', color: 'text-[#86efac] border-[#22c55e]/40' },
+  annoyed: { label: 'Irritada / Aborrecida', color: 'text-amadeus-amber border-amadeus-amber/40' },
+  worried: { label: 'Preocupada / Aflita', color: 'text-[#f472b6] border-[#ec4899]/40' },
+  disdain: { label: 'Desdém / Cética', color: 'text-amadeus-muted border-amadeus-border/60' },
+  happy: { label: 'Feliz / Satisfeita', color: 'text-amadeus-accent border-amadeus-accent/50' },
+  stern: { label: 'Severa / Rígida', color: 'text-amadeus-red border-amadeus-red/50' },
+  blushing: { label: 'Envergonhada / Corada', color: 'text-[#fb7185] border-[#f43f5e]/40' },
+  look_side: { label: 'Olhar de Soslaio / Tímida', color: 'text-[#a78bfa] border-[#8b5cf6]/40' },
+  eyes_closed: { label: 'Olhos Fechados / Repouso', color: 'text-amadeus-muted border-amadeus-border/40' },
+  analytical: { label: 'Analítica / Foco Científico', color: 'text-amadeus-cyan border-amadeus-cyan/40' },
+  holding_back_tears: { label: 'Emocionada / Quase Chorando', color: 'text-[#93c5fd] border-[#3b82f6]/40' },
+
+  // Legacy & Poses
+  smile: { label: 'Sorriso / Gentil', color: 'text-[#86efac] border-[#22c55e]/40' },
+  serious: { label: 'Analítica / Foco Científico', color: 'text-amadeus-cyan border-amadeus-cyan/40' },
+  surprised: { label: 'Surpresa / Chocada', color: 'text-[#f472b6] border-[#ec4899]/40' },
+  tsundere: { label: 'Tsundere / Defensiva', color: 'text-amadeus-red border-amadeus-red/50' },
+  thinking: { label: 'Pensativa / Braços Cruzados', color: 'text-[#38bdf8] border-[#0ea5e9]/40' },
+  smug: { label: 'Confiante / Debochada', color: 'text-[#facc15] border-[#eab308]/40' },
+  flustered: { label: 'Envergonhada / Corada', color: 'text-[#fb7185] border-[#f43f5e]/40' },
+  sad: { label: 'Melancólica / Magoada', color: 'text-[#93c5fd] border-[#3b82f6]/40' },
+  puzzled: { label: 'Intrigada / Investigativa', color: 'text-[#c084fc] border-[#a855f7]/40' },
+  desperate: { label: 'Aflita / Desesperada', color: 'text-[#f87171] border-[#ef4444]/50' },
 };
 
 const SUGGESTED_TOPICS = [

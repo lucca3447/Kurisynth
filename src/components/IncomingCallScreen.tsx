@@ -1,6 +1,7 @@
 import React from 'react';
 import { Phone, PhoneOff, Cpu, ShieldCheck } from 'lucide-react';
 import { PersonaProfile } from '../types/amadeus';
+import { KURISU_AVATAR_DEFAULT } from '../services/spriteCatalog';
 
 interface IncomingCallScreenProps {
   persona: PersonaProfile;
@@ -54,7 +55,7 @@ export const IncomingCallScreen: React.FC<IncomingCallScreenProps> = ({
           {/* Avatar Ring */}
           <div className="w-32 h-32 md:w-40 md:h-40 rounded-full border-2 border-amadeus-accent p-1 shadow-[0_0_30px_rgba(0,255,136,0.3)] bg-amadeus-card flex items-center justify-center overflow-hidden">
             <img
-              src="/assets/sprites/kurisu/CRS_JLD_40000100.png"
+              src={KURISU_AVATAR_DEFAULT}
               alt="Makise Kurisu"
               className="w-full h-full object-cover object-top scale-150 translate-y-3"
             />
