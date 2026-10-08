@@ -20,6 +20,9 @@ export interface SpeakOptions {
   lang?: string;
   useNeural?: boolean;
   neuralVoice?: string;
+  useRvc?: boolean;
+  rvcPitch?: number;
+  rvcIndexRate?: number;
   onStart?: () => void;
   onEnd?: () => void;
 }
@@ -332,6 +335,9 @@ export class SpeechService {
         voice,
         rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
         pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
+        useRvc: Boolean(options.useRvc),
+        rvcPitch: options.rvcPitch ?? 0,
+        rvcIndexRate: options.rvcIndexRate ?? 0.75,
       }),
     });
 

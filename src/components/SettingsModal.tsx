@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Key, Volume2, Monitor, HelpCircle, X, Check, Zap, Loader2, AlertTriangle } from 'lucide-react';
+import { Settings, Key, Volume2, Monitor, HelpCircle, X, Check, Zap, Loader2, AlertTriangle, Sparkles } from 'lucide-react';
 import { VoiceSettings } from '../types/amadeus';
 import { SpeechService } from '../services/speechService';
 import { AIService } from '../services/aiService';
@@ -31,12 +31,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [showRvcAdvanced, setShowRvcAdvanced] = useState(false);
 
   const handleTestVoice = async () => {
     setIsTestingVoice(true);
     const sampleText = voiceSettings.neuralVoice?.startsWith('ja-JP')
       ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
-      : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
+      : voiceSettings.useRvc
+        ? 'Olá! Conexão neural RVC estabelecida. Este é o timbre digitalizado de Makise Kurisu!'
+        : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
     await SpeechService.speak(sampleText, {
       voiceURI: voiceSettings.voiceURI,
       rate: voiceSettings.rate,
@@ -44,6 +47,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       volume: voiceSettings.volume,
       useNeural: voiceSettings.useNeural !== false,
       neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
+      useRvc: Boolean(voiceSettings.useRvc),
+      rvcPitch: voiceSettings.rvcPitch ?? 0,
+      rvcIndexRate: voiceSettings.rvcIndexRate ?? 0.75,
       onEnd: () => setIsTestingVoice(false),
     });
   };
@@ -218,6 +224,93 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {isTestingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
                 <span>{isTestingVoice ? 'Reproduzindo Amostra...' : 'Ouvir Amostra de Voz'}</span>
               </button>
+            </div>
+
+            {/* RVC Neural Voice Card (RTX 3050 GPU Acceleration) */}
+            <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                    <Sparkles className="w-3.5 h-3.5 text-amadeus-accent" />
+                    <span>CLONAGEM DE VOZ RVC (KURISU)</span>
+                  </div>
+                  <p className="text-[10px] text-amadeus-muted mt-0.5">
+                    Timbre da dubladora original acelerado na GPU RTX 3050 (FP16)
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(voiceSettings.useRvc)}
+                  onChange={(e) =>
+                    onSaveVoiceSettings({
+                      ...voiceSettings,
+                      useRvc: e.target.checked,
+                      useNeural: true,
+                    })
+                  }
+                  className="accent-amadeus-accent w-4 h-4 cursor-pointer"
+                />
+              </div>
+
+              {voiceSettings.useRvc && (
+                <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setShowRvcAdvanced((prev) => !prev)}
+                      className="text-[10px] text-amadeus-accent hover:underline flex items-center gap-1"
+                    >
+                      <span>{showRvcAdvanced ? '▼ Ocultar Ajustes Finos RVC' : '▶ Ajustes Finos de Tom & Timbre (Opcional)'}</span>
+                    </button>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
+                      CUDA FP16
+                    </span>
+                  </div>
+
+                  {showRvcAdvanced && (
+                    <div className="grid grid-cols-2 gap-3 pt-2 text-[10px]">
+                      <div>
+                        <label className="text-amadeus-muted block mb-1">
+                          Afinação / Pitch ({voiceSettings.rvcPitch ?? 0} semitons):
+                        </label>
+                        <input
+                          type="range"
+                          min="-6"
+                          max="6"
+                          step="1"
+                          value={voiceSettings.rvcPitch ?? 0}
+                          onChange={(e) =>
+                            onSaveVoiceSettings({
+                              ...voiceSettings,
+                              rvcPitch: parseInt(e.target.value, 10),
+                            })
+                          }
+                          className="w-full accent-amadeus-accent cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-amadeus-muted block mb-1">
+                          Fidelidade de Timbre ({Math.round((voiceSettings.rvcIndexRate ?? 0.75) * 100)}%):
+                        </label>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={voiceSettings.rvcIndexRate ?? 0.75}
+                          onChange={(e) =>
+                            onSaveVoiceSettings({
+                              ...voiceSettings,
+                              rvcIndexRate: parseFloat(e.target.value),
+                            })
+                          }
+                          className="w-full accent-amadeus-accent cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between pt-1">
