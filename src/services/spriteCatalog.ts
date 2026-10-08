@@ -127,50 +127,75 @@ export const KURISU_DEFAULT_EXPRESSIONS: Record<CanonicalEmotion, SpriteExpressi
 
 /**
  * Pose E (Braços cruzados sobre o peito com jaleco)
- * 7 canonical expressions available in MAGES engine (slots 1 to 7)
+ * 7 canonical expressions available in MAGES engine (slots 1 to 7):
+ * - Slot 1: Neutral (olhar frontal, repouso)
+ * - Slot 2: Blushing (rubor evidente nas bochechas)
+ * - Slot 3: Happy / Suave (sorriso amigável nos lábios)
+ * - Slot 4: Worried (preocupada / aflita)
+ * - Slot 5: Disdain (olhar semicerrado cético / tédio)
+ * - Slot 6: Stern / Analytical (olhos bem abertos, foco intenso)
+ * - Slot 7: Eyes Closed (olhos completamente fechados - frame verdadeiro de blink)
  */
 export const KURISU_CROSSED_ARMS_EXPRESSIONS: Partial<Record<CanonicalEmotion, SpriteExpressionFrames>> = {
   neutral: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000100.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000101.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000102.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
-  wink: {
+  blushing: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000200.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000201.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000202.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
-  annoyed: {
+  happy: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000300.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000301.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000302.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
   worried: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000400.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000401.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000402.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
   disdain: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000500.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000501.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000502.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
-  happy: {
+  annoyed: {
+    mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000500.png`,
+    mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000501.png`,
+    mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000502.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
+  },
+  stern: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000601.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000602.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
-  stern: {
+  analytical: {
+    mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000601.png`,
+    mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000602.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
+  },
+  eyes_closed: {
     mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
     mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000701.png`,
     mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000702.png`,
-    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000600.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
+  },
+  wink: {
+    mouthClosed: `${SPRITE_BASE_PATH}/CRS_JLE_40000300.png`,
+    mouthHalf: `${SPRITE_BASE_PATH}/CRS_JLE_40000301.png`,
+    mouthOpen: `${SPRITE_BASE_PATH}/CRS_JLE_40000302.png`,
+    blinkFrame: `${SPRITE_BASE_PATH}/CRS_JLE_40000700.png`,
   },
 };
 
@@ -364,6 +389,7 @@ export function preloadPrimarySprites(): void {
       urlsToPreload.add(expr.mouthClosed);
       urlsToPreload.add(expr.mouthHalf);
       urlsToPreload.add(expr.mouthOpen);
+      if (expr.blinkFrame) urlsToPreload.add(expr.blinkFrame);
     }
   });
 
