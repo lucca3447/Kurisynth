@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatMessage, Emotion, PersonaProfile, VoiceSettings } from './types/amadeus';
+import { CharacterPose, ChatMessage, Emotion, PersonaProfile, VoiceSettings } from './types/amadeus';
 import { MemoryService } from './services/memoryService';
 import { AIService, AIStatus } from './services/aiService';
 import { BackendService, BackendHealth } from './services/backendService';
@@ -26,6 +26,7 @@ export const App: React.FC = () => {
   // Persona and cognitive state
   const [persona, setPersona] = useState<PersonaProfile>(() => MemoryService.getPersona('kurisu'));
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
+  const [currentPose, setCurrentPose] = useState<CharacterPose>('default');
   const [recalledMemoryIds, setRecalledMemoryIds] = useState<string[]>([]);
   const [learnedNotification, setLearnedNotification] = useState<string | null>(null);
 
@@ -146,6 +147,13 @@ export const App: React.FC = () => {
       setAiStatus(result.status);
       setCurrentSubtitle(result.response);
       setCurrentEmotion(result.emotion);
+      if (result.pose) {
+        setCurrentPose(result.pose);
+      } else if (result.emotion === 'thinking') {
+        setCurrentPose('crossed_arms');
+      } else {
+        setCurrentPose('default');
+      }
 
       if (result.isError) {
         return;
@@ -169,6 +177,8 @@ export const App: React.FC = () => {
         setTimeout(() => setLearnedNotification(null), 5000);
       }
 
+      const assignedPose: CharacterPose = result.pose || (result.emotion === 'thinking' ? 'crossed_arms' : 'default');
+
       const updatedHistory: ChatMessage[] = [
         ...history,
         { id: newId(), sender: 'user', content: userMessage, timestamp: Date.now() },
@@ -178,6 +188,7 @@ export const App: React.FC = () => {
           content: result.response,
           timestamp: Date.now(),
           emotion: result.emotion,
+          pose: assignedPose,
           recalledMemories: matched.map((m) => m.id),
         },
       ];
@@ -200,11 +211,12 @@ export const App: React.FC = () => {
       setSessionId(newSessionId);
 
       const initialMsgs: ChatMessage[] = [
-        { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'smile' },
+        { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'neutral', pose: 'default' },
       ];
       setHistory(initialMsgs);
       setCurrentSubtitle(INITIAL_GREETING);
-      setCurrentEmotion('smile');
+      setCurrentEmotion('neutral');
+      setCurrentPose('default');
       MemoryService.saveActiveSession(newSessionId, initialMsgs);
     }
   };
@@ -239,9 +251,10 @@ export const App: React.FC = () => {
     setCallState('connected');
     if (history.length === 0) {
       setCurrentSubtitle(INITIAL_GREETING);
-      setCurrentEmotion('smile');
+      setCurrentEmotion('neutral');
+      setCurrentPose('default');
       const initialMsgs: ChatMessage[] = [
-        { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'smile' },
+        { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'neutral', pose: 'default' },
       ];
       setHistory(initialMsgs);
       MemoryService.saveActiveSession(sessionId, initialMsgs);
@@ -250,7 +263,8 @@ export const App: React.FC = () => {
       const lastMsg = [...history].reverse().find((m) => m.sender === 'amadeus');
       if (lastMsg) {
         setCurrentSubtitle(lastMsg.content);
-        setCurrentEmotion(lastMsg.emotion || 'smile');
+        setCurrentEmotion(lastMsg.emotion || 'neutral');
+        setCurrentPose(lastMsg.pose || (lastMsg.emotion === 'thinking' ? 'crossed_arms' : 'default'));
       }
     }
   };
@@ -321,6 +335,7 @@ export const App: React.FC = () => {
         {/* Visual Novel Character Sprite with Blinking & Lip Sync */}
         <AmadeusSpriteView
           emotion={currentEmotion}
+          pose={currentPose}
           isSpeaking={isSpeaking}
           scanlines={scanlines}
         />
