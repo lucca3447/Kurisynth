@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Wifi, Cpu, ShieldCheck, Database, RefreshCw } from 'lucide-react';
 import { AIStatus } from '../services/aiService';
 import { BackendHealth } from '../services/backendService';
+import { DivergenceMeter } from './DivergenceMeter';
 
 interface CallHeaderProps {
   isCalling: boolean;
@@ -93,7 +94,11 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
             <span>Nova Chamada</span>
           </button>
         )}
+
+        {/* Divergence Meter (Nixie Tubes) */}
+        <DivergenceMeter />
       </div>
+
 
       {/* Right: Storage Engine, AI Indicator & Signal */}
       <div className="flex items-center gap-3 text-xs font-mono">
