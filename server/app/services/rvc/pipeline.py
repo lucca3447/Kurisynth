@@ -5,10 +5,17 @@ import soundfile as sf
 import torch
 import torchaudio
 
-from .lib.hubert import HubertWrapper
-from .lib.rmvpe import RMVPE
-from .lib.models import SynthesizerTrnMs768NSFsid
-from .lib.index_reader import PureTorchIndex
+try:
+    from .lib.hubert import HubertWrapper
+    from .lib.rmvpe import RMVPE
+    from .lib.models import SynthesizerTrnMs768NSFsid
+    from .lib.index_reader import PureTorchIndex
+except (ImportError, ValueError):
+    from lib.hubert import HubertWrapper
+    from lib.rmvpe import RMVPE
+    from lib.models import SynthesizerTrnMs768NSFsid
+    from lib.index_reader import PureTorchIndex
+
 
 
 class KurisuRVCPipeline:
