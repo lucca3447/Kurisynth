@@ -1,4 +1,4 @@
-import { ChatMessage, Emotion, MemoryItem, PersonaProfile } from '../types/amadeus';
+import { CharacterPose, ChatMessage, Emotion, MemoryItem, PersonaProfile } from '../types/amadeus';
 import { BackendService } from './backendService';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -24,9 +24,30 @@ const MODEL_CACHE_FINGERPRINT = 'amadeus_model_key_fp';
 const MAX_HISTORY_MESSAGES = 20;
 
 const VALID_EMOTIONS: Emotion[] = [
-  'neutral', 'smile', 'happy', 'serious', 'annoyed',
-  'surprised', 'tsundere', 'thinking', 'smug', 'flustered',
-  'sad', 'puzzled', 'desperate',
+  // Canonical 12
+  'neutral',
+  'wink',
+  'annoyed',
+  'worried',
+  'disdain',
+  'happy',
+  'stern',
+  'blushing',
+  'look_side',
+  'eyes_closed',
+  'analytical',
+  'holding_back_tears',
+  // Legacy & Poses
+  'smile',
+  'serious',
+  'surprised',
+  'tsundere',
+  'thinking',
+  'smug',
+  'flustered',
+  'sad',
+  'puzzled',
+  'desperate',
 ];
 
 export type AIStatus =
@@ -44,6 +65,7 @@ export interface LearnedMemoryInfo {
 export interface AIResult {
   response: string;
   emotion: Emotion;
+  pose?: CharacterPose;
   status: AIStatus;
   /** true when the response is an error report, not something Amadeus "said" */
   isError: boolean;
@@ -419,8 +441,8 @@ export class AIService {
     // 3. Browser-Mode: Groq Cloud (Ultra-fast LPU)
     if (isGroqKey(key)) {
       try {
-        const { response, emotion, model, learnedMemory } = await this.queryGroq(userMessage, persona, recalledMemories, key, history);
-        return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
+        const { response, emotion, pose, model, learnedMemory } = await this.queryGroq(userMessage, persona, recalledMemories, key, history);
+        return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
       } catch (err) {
         console.error('[Amadeus] Groq call failed:', err);
         const message = err instanceof GeminiError
@@ -433,8 +455,8 @@ export class AIService {
     // 4. Browser-Mode: OpenRouter
     if (isOpenRouterKey(key)) {
       try {
-        const { response, emotion, model, learnedMemory } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
-        return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
+        const { response, emotion, pose, model, learnedMemory } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
+        return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
       } catch (err) {
         console.error('[Amadeus] OpenRouter call failed:', err);
         const message = err instanceof GeminiError
@@ -446,8 +468,8 @@ export class AIService {
 
     // 5. Browser-Mode: Google Gemini
     try {
-      const { response, emotion, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
-      return { response, emotion, status: { kind: 'online', model }, isError: false, learnedMemory };
+      const { response, emotion, pose, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
+      return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
     } catch (err) {
       console.error('[Amadeus] Gemini call failed:', err);
       const message = err instanceof GeminiError
@@ -486,7 +508,7 @@ export class AIService {
     recalledMemories: MemoryItem[],
     apiKey: string,
     history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
     const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
 
@@ -573,7 +595,7 @@ export class AIService {
     recalledMemories: MemoryItem[],
     apiKey: string,
     history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
     const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
 
@@ -696,7 +718,7 @@ export class AIService {
     recalledMemories: MemoryItem[],
     apiKey: string,
     history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; model: string; learnedMemory?: LearnedMemoryInfo }> {
+  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
 
     const body = {
@@ -827,9 +849,11 @@ export class AIService {
   ): {
     response: string;
     emotion: Emotion;
+    pose?: CharacterPose;
     learnedMemory?: LearnedMemoryInfo;
   } {
     let emotion: Emotion = 'neutral';
+    let pose: CharacterPose | undefined = undefined;
     let cleanText = this.stripThinkingTags(rawText);
     let learnedMemory: LearnedMemoryInfo | undefined = undefined;
 
@@ -851,7 +875,17 @@ export class AIService {
       cleanText = cleanText.replace(/<!--\s*remember:.*?\s*-->/gi, '');
     }
 
-    // 2. Extract emotion tag: handle piped or multiple values like happy|smile, smile/happy
+    // 2. Extract pose tag: <!--pose:crossed_arms|default|backview-->
+    const poseMatch = cleanText.match(/<!--\s*pose:\s*([^>]+?)\s*-->/i);
+    if (poseMatch && poseMatch[1]) {
+      const pTok = poseMatch[1].toLowerCase().trim();
+      if (pTok === 'crossed_arms' || pTok === 'thinking') pose = 'crossed_arms';
+      else if (pTok === 'backview' || pTok === 'back') pose = 'backview';
+      else if (pTok === 'default' || pTok === 'front') pose = 'default';
+      cleanText = cleanText.replace(/<!--\s*pose:[^>]*-->/gi, '');
+    }
+
+    // 3. Extract emotion tag: handle piped or multiple values like happy|smile, smile/happy
     const match = cleanText.match(/<!--\s*emotion:\s*([^>]+?)\s*-->/i);
     if (match && match[1]) {
       const rawVal = match[1].toLowerCase().trim();
@@ -866,64 +900,82 @@ export class AIService {
     // Infallible removal of any emotion tag variant
     cleanText = cleanText.replace(/<!--\s*emotion:[^>]*-->/gi, '');
 
-    // 3. Extract stage directions from asterisks before stripping (*sorri*, *fica pensativa*)
+    // 4. Extract stage directions from asterisks before stripping (*sorri*, *cruza os braços*)
     const asterisks = cleanText.match(/\*([^*]+)\*/g);
     if (asterisks && (emotion === 'neutral' || emotion === 'serious')) {
       for (const act of asterisks) {
         const aLow = act.toLowerCase();
-        if (/sorri|sorriso|alegre|risad/.test(aLow)) emotion = 'smile';
-        else if (/pensa|pensativ|olha para cima|queixo/.test(aLow)) emotion = 'thinking';
-        else if (/brava|irritad|emburrad|cruza os braços/.test(aLow)) emotion = 'annoyed';
-        else if (/cora|vergonha|tímid|desvia o olhar/.test(aLow)) emotion = 'tsundere';
-        else if (/surpres|assustad|choque/.test(aLow)) emotion = 'surprised';
-        else if (/confus|dúvida|inclin/.test(aLow)) emotion = 'puzzled';
-        else if (/triste|chora|lágrima/.test(aLow)) emotion = 'sad';
+        if (/pisca|piscad/.test(aLow)) emotion = 'wink';
+        else if (/sorri|sorriso|alegre|risad/.test(aLow)) emotion = 'happy';
+        else if (/cruza os bra[çc]os|bra[çc]os cruzados|pensa|pensativ/.test(aLow)) {
+          emotion = 'thinking';
+          pose = 'crossed_arms';
+        }
+        else if (/brava|irritad|emburrad/.test(aLow)) emotion = 'annoyed';
+        else if (/cora|vergonha|t[íi]mid/.test(aLow)) emotion = 'blushing';
+        else if (/olha para o lado|desvia o olhar|soslaio/.test(aLow)) emotion = 'look_side';
+        else if (/olhos fechados|repouso/.test(aLow)) emotion = 'eyes_closed';
+        else if (/analis|ci[êe]ncia|teoria/.test(aLow)) emotion = 'analytical';
+        else if (/triste|chora|l[áa]grima/.test(aLow)) emotion = 'holding_back_tears';
+        else if (/preocupad|aflit/.test(aLow)) emotion = 'worried';
+        else if (/desd[ée]m|t[ée]dio/.test(aLow)) emotion = 'disdain';
       }
     }
     // Strip asterisks stage directions from dialogue
     cleanText = cleanText.replace(/\*[^*]+\*/g, '');
 
-    // 4. Context-aware inference from user intent (if emotion is neutral/unresolved)
+    // 5. Context-aware inference from user intent (if emotion is neutral/unresolved)
     if (userMessage && (emotion === 'neutral' || emotion === 'serious')) {
       const uLow = userMessage.toLowerCase();
-      if (/(?:d[eê]|d[aá]|um)?\s*(?:sorriso|sorria|sorri)/i.test(uLow)) emotion = 'smile';
-      else if (/(?:pense|pensativa|reflita|m[aã]o no queixo|analise)/i.test(uLow)) emotion = 'thinking';
-      else if (/(?:brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)/i.test(uLow)) emotion = 'annoyed';
-      else if (/(?:cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)/i.test(uLow)) emotion = 'flustered';
-      else if (/(?:confusa|d[úu]vida|incline a cabe[çc]a)/i.test(uLow)) emotion = 'puzzled';
-      else if (/(?:surpresa|assustada|olhos arregalados)/i.test(uLow)) emotion = 'surprised';
-      else if (/(?:triste|chore|chora|l[áa]grimas)/i.test(uLow)) emotion = 'sad';
+      if (/(?:d[eê]|d[aá]|uma)?\s*(?:piscad|pisque|pisca)/i.test(uLow)) emotion = 'wink';
+      else if (/(?:d[eê]|d[aá]|um)?\s*(?:sorriso|sorria|sorri|alegre)/i.test(uLow)) emotion = 'happy';
+      else if (/(?:cruze os bra[çc]os|bra[çc]os cruzados)/i.test(uLow)) {
+        emotion = 'thinking';
+        pose = 'crossed_arms';
+      }
+      else if (/(?:pense|pensativa|reflita|analise)/i.test(uLow)) {
+        emotion = 'thinking';
+        pose = 'crossed_arms';
+      }
+      else if (/(?:brava|irritada|emburrada)/i.test(uLow)) emotion = 'annoyed';
+      else if (/(?:cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)/i.test(uLow)) emotion = 'blushing';
+      else if (/(?:olhe para o lado|olhe de lado|desvie o olhar)/i.test(uLow)) emotion = 'look_side';
+      else if (/(?:feche os olhos|olhos fechados|descanse)/i.test(uLow)) emotion = 'eyes_closed';
+      else if (/(?:triste|chore|chora|l[áa]grimas)/i.test(uLow)) emotion = 'holding_back_tears';
+      else if (/(?:preocupada|aflita)/i.test(uLow)) emotion = 'worried';
+      else if (/(?:de costas|vire de costas)/i.test(uLow)) pose = 'backview';
     }
 
-    // 5. Inferred sentiment fallback from assistant words
+    // 6. Inferred sentiment fallback from assistant words
     const lower = cleanText.toLowerCase();
     if (emotion === 'neutral' || emotion === 'serious') {
       if (lower.includes('baka') || lower.includes('idiota') || lower.includes('não me entenda mal') || lower.includes('christina')) {
-        emotion = 'tsundere';
+        emotion = 'stern';
       } else if (lower.includes('o quê') || lower.includes('como assim') || lower.includes('?!')) {
-        emotion = 'surprised';
+        emotion = 'worried';
       } else if (lower.includes('pesquisa') || lower.includes('teoria') || lower.includes('física') || lower.includes('sinapse')) {
-        emotion = 'thinking';
+        emotion = 'analytical';
       } else if (lower.includes('obrigada') || lower.includes('hehe') || lower.includes('fico feliz') || lower.includes('sorriso') || lower.includes('sorri')) {
-        emotion = 'smile';
-      } else if (lower.includes('concordo') || lower.includes('exatamente')) {
         emotion = 'happy';
       } else if (lower.includes('triste') || lower.includes('sinto muito') || lower.includes('lágrimas') || lower.includes('desculpe') || lower.includes('mayuri')) {
-        emotion = 'sad';
+        emotion = 'holding_back_tears';
       } else if (lower.includes('estranho') || lower.includes('como pode') || lower.includes('não faz sentido') || lower.includes('curioso') || lower.includes('inexplicável')) {
-        emotion = 'puzzled';
-      } else if (lower.includes('por favor') || lower.includes('não desista') || lower.includes('socorro') || lower.includes('urgente') || lower.includes('precisamos')) {
-        emotion = 'desperate';
+        emotion = 'analytical';
       }
     }
 
-    // 6. Sanitize robotic action narration phrases & emoticons
+    // 7. Sanitize robotic action narration phrases & emoticons
     cleanText = cleanText.replace(/^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*/i, 'U-um sorriso? Se você faz tanta questão... mas não se acostume com isso! ');
     cleanText = cleanText.replace(/^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*/i, '');
     cleanText = cleanText.replace(/[:;]-?[)(DPpOdD]/g, '');
     cleanText = cleanText.replace(/\s+/g, ' ').trim();
 
-    return { response: cleanText, emotion, learnedMemory };
+    // Default pose adjustment
+    if (emotion === 'thinking' && !pose) {
+      pose = 'crossed_arms';
+    }
+
+    return { response: cleanText, emotion, pose, learnedMemory };
   }
 
   /**
@@ -933,7 +985,7 @@ export class AIService {
     userMessage: string,
     persona: PersonaProfile,
     recalledMemories: MemoryItem[]
-  ): { response: string; emotion: Emotion; learnedMemory?: LearnedMemoryInfo } {
+  ): { response: string; emotion: Emotion; pose?: CharacterPose; learnedMemory?: LearnedMemoryInfo } {
     const text = userMessage.toLowerCase().trim();
 
     // Check for user introduction to simulate learning in offline mode
