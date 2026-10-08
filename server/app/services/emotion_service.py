@@ -211,5 +211,21 @@ def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> Tuple[
     clean = re.sub(r"[:;]-?[)(DPpOdD]", "", clean)
     clean = re.sub(r"\s+", " ", clean).strip()
 
+    # 7. Strip repetitive verbal tic openers (such as "Não me entenda mal, mas...")
+    clean = sanitize_repetitive_openers(clean)
+
     return clean, emotion, learned_info
+
+def sanitize_repetitive_openers(text: str) -> str:
+    """
+    Strips repetitive verbal tic prefixes like 'Não me entenda mal, mas' or 'N-não me entenda mal, mas',
+    capitalizing the following sentence for natural, mature speech.
+    """
+    if not text:
+        return ""
+    t = re.sub(r"(?i)^(?:[Nn][ãa]o me entenda mal|[Nn]-n[ãa]o me entenda mal)[:;,!.—–-]*\s*(?:mas\s*)?", "", text).strip()
+    if t and t[0].islower():
+        t = t[0].upper() + t[1:]
+    return t
+
 
