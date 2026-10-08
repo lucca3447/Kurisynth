@@ -89,9 +89,12 @@ class RVCManager:
 
         try:
             async with httpx.AsyncClient(timeout=35.0) as client:
-                files = {"audio_file": ("input.wav", audio_bytes, "audio/wav")}
-                data = {"pitch_shift": pitch_shift, "index_rate": index_rate}
-                res = await client.post(f"{WORKER_URL}/convert", files=files, data=data)
+                res = await client.post(
+                    f"{WORKER_URL}/convert",
+                    content=audio_bytes,
+                    params={"pitch_shift": pitch_shift, "index_rate": index_rate},
+                    headers={"Content-Type": "application/octet-stream"},
+                )
                 if res.status_code == 200:
                     return res.content
                 print(f"[RVC Manager] Worker conversion error ({res.status_code}): {res.text}")

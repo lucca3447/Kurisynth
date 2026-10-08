@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response
 
 # Ensure path to rvc package is available
@@ -9,10 +9,10 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
 WEIGHTS_DIR = os.path.join(SERVER_DIR, "weights")
 
-if CURRENT_DIR not in sys.path:
-    sys.path.insert(0, CURRENT_DIR)
+if SERVER_DIR not in sys.path:
+    sys.path.insert(0, SERVER_DIR)
 
-from pipeline import KurisuRVCPipeline
+from app.services.rvc.pipeline import KurisuRVCPipeline
 
 app = FastAPI(title="Amadeus RVC Neural Voice Worker", version="1.0.0")
 
@@ -52,15 +52,18 @@ def health_check():
 
 @app.post("/convert")
 async def convert_voice(
-    audio_file: UploadFile = File(...),
-    pitch_shift: int = Form(0),
-    index_rate: float = Form(0.8),
+    request: Request,
+    pitch_shift: int = 0,
+    index_rate: float = 0.75,
 ):
     if pipeline is None:
         raise HTTPException(status_code=503, detail="RVC Worker is initializing")
 
     try:
-        content = await audio_file.read()
+        content = await request.body()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty audio payload")
+
         out_wav = pipeline.convert_audio(
             audio_bytes=content,
             pitch_shift=pitch_shift,
@@ -71,6 +74,7 @@ async def convert_voice(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Voice conversion failed: {str(e)}")
+
 
 
 if __name__ == "__main__":
