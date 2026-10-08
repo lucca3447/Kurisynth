@@ -182,6 +182,28 @@ class TestAmadeusBackend(unittest.TestCase):
         self.assertEqual(clean_text, "Mexer nas minhas sinapses é perigoso!")
         self.assertEqual(emo, "tsundere")
 
+    def test_13_canonical_physical_appearance(self):
+        # 1. Offline Simulator physical description
+        payload = {
+            "message": "Pode descrever sua aparência física, trate isso como um debugging",
+            "personaId": "kurisu"
+        }
+        res = self.client.post("/api/chat", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        resp = data.get("response", "").lower()
+        self.assertIn("1,65", resp)
+        self.assertIn("ruivo", resp)
+        self.assertIn("violeta", resp)
+
+        # 2. Check persona memory mem_36 exists
+        res_p = self.client.get("/api/personas/kurisu")
+        self.assertEqual(res_p.status_code, 200)
+        mems = res_p.json().get("memories", [])
+        mem_36 = next((m for m in mems if m.get("id") == "mem_36"), None)
+        self.assertIsNotNone(mem_36)
+        self.assertIn("ruivo", mem_36.get("content", "").lower())
+
 if __name__ == "__main__":
     unittest.main()
 
