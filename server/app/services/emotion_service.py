@@ -147,11 +147,17 @@ def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> Tuple[
     # Strip asterisks stage directions from dialogue
     clean = re.sub(r"\*[^*]+\*", "", clean)
 
-    # 4. Context-aware inference from user intent (if emotion is neutral/unresolved)
+    # 4. Context-aware inference from user intent & physical command triggers
     if user_message:
         u_lower = user_message.lower()
-        if re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", u_lower):
-            if emotion in ("neutral", "serious"):
+        if re.search(r"(?i)\b(barata|fujiko|inseto|insetos)\b", u_lower):
+            emotion = "desperate"
+        elif re.search(r"(?i)\b(christina|assistente|zombie)\b", u_lower):
+            emotion = "annoyed"
+        elif re.search(r"(?i)\b(linda|fofa|bonita|maravilhosa|atraente|perfeita|cora|corada|vergonha|envergonhada|t[íi]mida|bochechas)\b", u_lower):
+            emotion = "flustered"
+        elif re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", u_lower):
+            if emotion in ("neutral", "serious", "tsundere"):
                 emotion = "smile"
         elif re.search(r"(?i)\b(pense|pensativa|reflita|m[aã]o no queixo|analise)\b", u_lower):
             if emotion in ("neutral", "serious"):
@@ -159,9 +165,6 @@ def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> Tuple[
         elif re.search(r"(?i)\b(brava|irritada|emburrada|cruze os bra[çc]os|bra[çc]os cruzados)\b", u_lower):
             if emotion in ("neutral", "serious"):
                 emotion = "annoyed"
-        elif re.search(r"(?i)\b(cora|corada|vergonha|envergonhada|t[íi]mida|fofa|linda)\b", u_lower):
-            if emotion in ("neutral", "serious", "tsundere"):
-                emotion = "flustered"
         elif re.search(r"(?i)\b(confusa|d[úu]vida|incline a cabe[çc]a)\b", u_lower):
             if emotion in ("neutral", "serious"):
                 emotion = "puzzled"
@@ -172,30 +175,41 @@ def parse_tags(raw: Optional[str], user_message: Optional[str] = None) -> Tuple[
             if emotion in ("neutral", "serious"):
                 emotion = "sad"
 
-    # 5. Assistant dialogue sentiment fallback
+    # 5. Assistant dialogue sentiment fallback & vocal stuttering detection
     lower = clean.lower()
     if emotion in ("neutral", "serious"):
-        if any(w in lower for w in ["baka", "idiota", "não me entenda mal", "christina"]):
+        if re.search(r"\b(n-não|q-quem|c-como|o-o que|b-bem|s-se você|l-linda|f-fofa)\b", lower):
+            emotion = "flustered"
+        elif any(w in lower for w in ["barata", "fujiko", "tirem isso de perto", "socorro"]):
+            emotion = "desperate"
+        elif any(w in lower for w in ["idiota", "não me entenda mal", "ora essa", "francamente", "baka"]):
             emotion = "tsundere"
         elif any(w in lower for w in ["o quê", "como assim", "?!"]):
             emotion = "surprised"
-        elif any(w in lower for w in ["pesquisa", "teoria", "física", "sinapse"]):
+        elif any(w in lower for w in ["óbvio", "elementar", "como previsto", "como esperado", "naturalmente"]):
+            emotion = "smug"
+        elif any(w in lower for w in ["pesquisa", "teoria", "física", "sinapse", "hipótese", "kerr"]):
             emotion = "thinking"
-        elif any(w in lower for w in ["obrigada", "hehe", "fico feliz", "sorriso", "sorri"]):
+        elif any(w in lower for w in ["obrigada", "fico feliz", "sorriso", "sorri"]):
             emotion = "smile"
         elif any(w in lower for w in ["triste", "sinto muito", "lágrimas", "desculpe", "mayuri"]):
             emotion = "sad"
         elif any(w in lower for w in ["estranho", "como pode", "não faz sentido", "curioso", "inexplicável"]):
             emotion = "puzzled"
-        elif any(w in lower for w in ["por favor", "não desista", "socorro", "urgente", "precisamos"]):
+        elif any(w in lower for w in ["por favor", "não desista", "urgente", "precisamos"]):
             emotion = "desperate"
 
-    # 6. Sanitize robotic action narration phrases like "Aqui vai um sorriso para você"
+    # 6. Sanitize robotic action narration phrases and parenthetical stage directions
+    clean = re.sub(r"(?i)\((?:sorri|sorrindo|pensativa|pensando|brava|irritada|corada|envergonhada|com a mão no queixo|de braços cruzados)\)", "", clean)
     clean = re.sub(r"(?i)^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*", "U-um sorriso? Se você faz tanta questão... mas não se acostume com isso! ", clean)
     clean = re.sub(r"(?i)^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*", "", clean)
+    clean = re.sub(r"(?i)^(?:aqui est[aá] uma express[aã]o pensativa|aqui vai uma pose pensativa)[.,!:]*", "", clean)
+    clean = re.sub(r"(?i)^(?:vou cruzar os bra[çc]os|estou de bra[çc]os cruzados)[.,!:]*", "", clean)
+    clean = re.sub(r"(?i)^(?:estou com a m[aã]o no queixo)[.,!:]*", "", clean)
 
     # Strip residual emoticons like :) :-D xD
     clean = re.sub(r"[:;]-?[)(DPpOdD]", "", clean)
     clean = re.sub(r"\s+", " ", clean).strip()
 
     return clean, emotion, learned_info
+
