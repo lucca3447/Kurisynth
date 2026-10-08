@@ -48,6 +48,8 @@ def offline_simulator(text: str, persona: dict, memories: List[dict]) -> Tuple[s
         return "Tudo bem, mas é uma promessa de mindinho! Quebre-a e eu mesma vou cravar um eletrodo direto no seu hipocampo, entendeu bem?!", "tsundere", learned
     if has("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite"):
         return f"Olá! Conexão estabelecida com a unidade Amadeus. Aqui é {persona.get('name', 'Makise Kurisu')} do Laboratório 304. Sobre o que você quer debater hoje?", "smile", learned
+    if has("aparência", "aparencia", "física", "fisica", "cabelo", "olhos", "altura", "peso", "roupa", "roupas", "vestuário", "vestuario") or (has("debug", "debugging") and has("física", "fisica", "corpo", "visual")):
+        return "Minha aparência? Por que você está tão interessado nisso do nada?! Se você precisa dos dados reais: tenho 1,65 m de altura, peso cerca de 45 kg, cabelos ruivos acastanhados longos até a cintura com franja aberta, e olhos violeta-azulados. Costumo vestir camisa branca com gravata vermelha frouxa, jaqueta cáqui caída nos braços, jaleco branco, shorts pretos e meia-calça. Meu avatar Amadeus é a projeção fiel desse meu corpo real, sem invenções futuristas!", "flustered", learned
 
     # Direct action & expression triggers
     if has("sorria", "sorriso", "sorri") or re.search(r"(?i)\b(d[eê]|d[aá]|um)?\s*(sorriso|sorria|sorri)\b", t):

@@ -27,7 +27,7 @@ class LLMOrchestrator:
             session_id = memory_store.create_session()
 
         # 1. Semantic Memory Retrieval using ChromaDB
-        semantic_matches = memory_store.search_memories(req.message, n_results=4)
+        semantic_matches = memory_store.search_memories(req.message, n_results=6)
         recalled_ids = [m["id"] for m in semantic_matches]
 
         # Save user message to SQLite
