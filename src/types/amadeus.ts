@@ -92,6 +92,9 @@ export interface VoiceSettings {
   lang: string;
   useNeural?: boolean;
   neuralVoice?: string;
+  useRvc?: boolean;
+  rvcPitch?: number;
+  rvcIndexRate?: number;
 }
 
 export interface SystemConfig {
