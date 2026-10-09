@@ -36,7 +36,7 @@ flowchart TD
         SpriteEngine[Sprite View & State Machine]
         Oscilloscope[Audio Oscilloscope — HTML5 Canvas]
         NixieMeter[Divergence Meter — Nixie Tube Component]
-        SpeechClient[Web Speech STT / TTS Client]
+        SpeechClient[Web Speech STT / Edge-TTS Audio Client]
     end
 
     subgraph Server [Backend — FastAPI Python]
@@ -45,6 +45,8 @@ flowchart TD
         EmotionParser[Emotion Tag & Sanitization Service]
         DivergenceService[Divergence Telemetry Service]
         MemoryStore[Hybrid Memory Store]
+        VoiceService[Voice Synthesis & Edge-TTS Service]
+        RVCWorker[Kurisu RVC Neural Worker Service]
     end
 
     subgraph Database [Data Persistence Layer]
@@ -61,6 +63,8 @@ flowchart TD
 
     UI <--> Router
     Router --> Orchestrator
+    Router --> VoiceService
+    VoiceService --> RVCWorker
     Orchestrator --> MemoryStore
     Orchestrator --> EmotionParser
     Orchestrator --> DivergenceService
@@ -97,10 +101,11 @@ flowchart TD
   - History prefix sanitization breaks probabilistic echo loops from previous chat turns.
   - Real-time output regex filter strips repetitive verbal tics before TTS and UI rendering.
 
-### 4. Acoustic & Visual UI Components
-- **HTML5 Canvas Oscilloscope**: Real-time sine wave modulated by amplitude, frequency, and Brownian noise during speech synthesis playback.
-- **Divergence Meter**: Authentic Nixie tube visual component with amber neon glow (`#ff7700`) displaying live worldline measurements.
-- **Optional CRT Scanlines**: Retro aesthetic overlay toggled via UI settings.
+### 4. Neural Voice Synthesis & Kurisu RVC Voice Cloning
+- **Dual-Stage Speech Pipeline**: Generates clean base phonetic audio in Portuguese using Microsoft Edge-TTS (`pt-BR-FranciscaNeural` / `pt-BR-ThalitaNeural`) and routes it through a neural voice conversion pipeline.
+- **Dedicated Kurisu RVC Worker**: High-fidelity Retrieval-based Voice Conversion using RMVPE pitch extraction and HuBERT semantic audio representations, transforming speech into Makise Kurisu's canonical voice.
+- **Acoustic Controls & Fine-Tuning**: Real-time pitch transposition (-12 to +12 semitones) and Faiss feature index retrieval ratio sliders in the UI.
+- **Fault-Tolerant Fallback**: Gracefully falls back to direct neural Edge-TTS or the browser Web Speech API if the RVC worker is unavailable.
 
 ---
 
@@ -231,6 +236,7 @@ The backend provides a versioned RESTful API (`/api/v1` with backward-compatible
 | `POST` | `/api/sessions/new` | Creates a new conversation session |
 | `GET` | `/api/sessions/{id}/messages` | Retrieves message history for a given session |
 | `GET` | `/api/divergence` | Returns live worldline divergence measurement and attractor field classification |
+| `POST` | `/api/tts` | Synthesizes text to speech with Edge-TTS and optional Kurisu RVC neural voice conversion |
 
 ---
 
@@ -265,6 +271,25 @@ npx tsc --noEmit
 - **Client-Side Secret Storage**: API keys are stored exclusively in the user's browser `localStorage`. No keys are sent to third parties other than the selected inference provider.
 - **Local Data Isolation**: Backend session logs and vector embeddings are stored locally in `server/data/` (`amadeus.db` and `chroma_db/`).
 - **Input & Output Sanitization**: Dialogue inputs and outputs are filtered against chain-of-thought scratchpad leaks and formatting artifacts.
+
+---
+
+##  Credits
+
+Credits the creators, open-source communities, and researchers whose tools, models, and datasets used in this project:
+
+- **Kurisu RVC Voice Model**:
+  - Pre-trained RVC model weights and feature retrieval index (`Kurisu-RVC`) created by [Francesco Caracciolo](https://github.com/FrancescoCaracciolo), hosted on [Hugging Face (`FrancescoCaracciolo/Kurisu-RVC`)](https://huggingface.co/FrancescoCaracciolo/Kurisu-RVC).
+  - Derived from the official character voice acting performance of **Asami Imai (今井 麻美)** as Makise Kurisu.
+- **Steins;Gate Corpus & Scenario References**:
+  - Dialogue extractions, canonical scenarios, and persona system prompts adapted from [Francesco Caracciolo's Amadeus Project](https://github.com/FrancescoCaracciolo/Amadeus) 
+- **Retrieval-based Voice Conversion (RVC)**:
+  - Voice conversion architecture and feature retrieval algorithms built upon [Retrieval-based-Voice-Conversion-WebUI (RVC-Project)](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI), incorporating **RMVPE** for high-precision fundamental frequency ($F_0$) pitch tracking and **HuBERT / ContentVec** for speaker-invariant acoustic representations.
+- **Neural Text-to-Speech (Edge-TTS)**:
+  - Python interface and Microsoft Edge neural speech synthesis bridge provided by the open-source library [rany2/edge-tts](https://github.com/rany2/edge-tts).
+- **Character Design & Visual Novel Assets**:
+  - Original character design and illustrations by **huke**.
+  - Visual novel sprite assets, storyline, and concepts from *Steins;Gate* and *Steins;Gate 0* by **MAGES. Inc. / 5pb. / Chiyomaru Shikura / Nitroplus**.
 
 ---
 
