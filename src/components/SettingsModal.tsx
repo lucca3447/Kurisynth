@@ -35,16 +35,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleTestVoice = async () => {
     setIsTestingVoice(true);
-    const sampleText = voiceSettings.neuralVoice?.startsWith('ja-JP')
-      ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
-      : voiceSettings.useRvc
-        ? 'Olá! Conexão neural RVC estabelecida. Este é o timbre digitalizado de Makise Kurisu!'
-        : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
+    const sampleText = voiceSettings.engine === 'qwen3'
+      ? 'Não precisa me envergonhar assim... seu idiota!'
+      : voiceSettings.neuralVoice?.startsWith('ja-JP')
+        ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
+        : voiceSettings.useRvc
+          ? 'Olá! Conexão neural RVC estabelecida. Este é o timbre digitalizado de Makise Kurisu!'
+          : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
     await SpeechService.speak(sampleText, {
       voiceURI: voiceSettings.voiceURI,
       rate: voiceSettings.rate,
       pitch: voiceSettings.pitch,
       volume: voiceSettings.volume,
+      engine: voiceSettings.engine || 'edge_rvc',
+      emotion: 'tsundere',
       useNeural: voiceSettings.useNeural !== false,
       neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
       useRvc: Boolean(voiceSettings.useRvc),
@@ -165,153 +169,214 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span>CONFIGURAÇÃO DE VOZ (SPEECH SYNTHESIS)</span>
             </div>
 
-            {/* Neural vs System Voice selector */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-white font-medium block">Voz Neural de Alta Definição (Edge-TTS)</span>
-                  <span className="text-[10px] text-amadeus-muted">Voz humana com sincronia labial acústica</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={voiceSettings.useNeural !== false}
-                  onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, useNeural: e.target.checked })}
-                  className="accent-amadeus-accent w-4 h-4 cursor-pointer"
-                />
+            {/* Engine Selection: Qwen3-TTS vs Edge-TTS + RVC */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-amadeus-muted block">Motor de Síntese Vocal:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSaveVoiceSettings({ ...voiceSettings, engine: 'qwen3' })}
+                  className={`p-2 rounded-lg border text-left transition-all ${
+                    voiceSettings.engine === 'qwen3'
+                      ? 'border-amadeus-accent bg-amadeus-accent/15 text-white shadow-sm shadow-amadeus-accent/20'
+                      : 'border-amadeus-border bg-amadeus-card/60 text-amadeus-muted hover:border-amadeus-muted'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Kurisu Qwen3-TTS</span>
+                  </div>
+                  <p className="text-[9px] mt-0.5 text-amadeus-muted">
+                    End-to-End Neural (RTX 3050 | Suspiros & Tsundere)
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onSaveVoiceSettings({ ...voiceSettings, engine: 'edge_rvc' })}
+                  className={`p-2 rounded-lg border text-left transition-all ${
+                    voiceSettings.engine !== 'qwen3'
+                      ? 'border-amadeus-accent bg-amadeus-accent/15 text-white shadow-sm shadow-amadeus-accent/20'
+                      : 'border-amadeus-border bg-amadeus-card/60 text-amadeus-muted hover:border-amadeus-muted'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>Edge-TTS + RVC</span>
+                  </div>
+                  <p className="text-[9px] mt-0.5 text-amadeus-muted">
+                    Híbrido Leve (Dicção PT-BR pura + Timbre)
+                  </p>
+                </button>
               </div>
-
-              {voiceSettings.useNeural !== false ? (
-                <div className="space-y-1">
-                  <label className="text-[10px] text-amadeus-muted block">Voz Neural (IA):</label>
-                  <select
-                    value={voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural'}
-                    onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, neuralVoice: e.target.value })}
-                    className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
-                  >
-                    <option value="pt-BR-FranciscaNeural">Francisca Neural (Português BR - Natural & Expressiva)</option>
-                    <option value="pt-BR-ThalitaNeural">Thalita Neural (Português BR - Jovem & Rápida)</option>
-                    <option value="pt-BR-ElzaNeural">Elza Neural (Português BR - Calma & Séria)</option>
-                    <option value="ja-JP-NanamiNeural">Nanami Neural (Japonês - Anime Original)</option>
-                    <option value="ja-JP-AoiNeural">Aoi Neural (Japonês - Calma)</option>
-                    <option value="en-US-JennyNeural">Jenny Neural (Inglês - Cientista Viktor Chondria)</option>
-                  </select>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <label className="text-[10px] text-amadeus-muted block">Voz do Sistema (Navegador):</label>
-                  <select
-                    value={voiceSettings.voiceURI || ''}
-                    onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, voiceURI: e.target.value })}
-                    className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
-                  >
-                    <option value="">Padrão do Sistema</option>
-                    {availableVoices.map((v) => (
-                      <option key={v.voiceURI} value={v.voiceURI}>
-                        {v.name} ({v.lang})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Sample audio preview button */}
-              <button
-                type="button"
-                onClick={handleTestVoice}
-                disabled={isTestingVoice}
-                className="w-full h-8 rounded border border-amadeus-accent/40 bg-amadeus-accent/10 hover:bg-amadeus-accent hover:text-black text-amadeus-accent text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-              >
-                {isTestingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
-                <span>{isTestingVoice ? 'Reproduzindo Amostra...' : 'Ouvir Amostra de Voz'}</span>
-              </button>
             </div>
 
-            {/* RVC Neural Voice Card (RTX 3050 GPU Acceleration) */}
-            <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
+            {voiceSettings.engine === 'qwen3' ? (
+              <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-2">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
                     <Sparkles className="w-3.5 h-3.5 text-amadeus-accent" />
-                    <span>CLONAGEM DE VOZ RVC (KURISU)</span>
+                    <span>QWEN3-TTS KURISU (RESIDENT GPU)</span>
                   </div>
-                  <p className="text-[10px] text-amadeus-muted mt-0.5">
-                    Timbre da dubladora original acelerado na GPU RTX 3050 (FP16)
-                  </p>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
+                    CUDA BF16 (RTX 3050)
+                  </span>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={Boolean(voiceSettings.useRvc)}
-                  onChange={(e) =>
-                    onSaveVoiceSettings({
-                      ...voiceSettings,
-                      useRvc: e.target.checked,
-                      useNeural: true,
-                    })
-                  }
-                  className="accent-amadeus-accent w-4 h-4 cursor-pointer"
-                />
+                <p className="text-[10px] text-amadeus-muted leading-relaxed">
+                  Síntese direta ponta a ponta na voz da Kurisu. As entonações, pausas e suspiros tsundere reagem dinamicamente às emoções da tela com acústica de estúdio seco.
+                </p>
               </div>
-
-              {voiceSettings.useRvc && (
-                <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
+            ) : (
+              <>
+                {/* Neural vs System Voice selector */}
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setShowRvcAdvanced((prev) => !prev)}
-                      className="text-[10px] text-amadeus-accent hover:underline flex items-center gap-1"
-                    >
-                      <span>{showRvcAdvanced ? '▼ Ocultar Ajustes Finos RVC' : '▶ Ajustes Finos de Tom & Timbre (Opcional)'}</span>
-                    </button>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
-                      CUDA FP16
-                    </span>
+                    <div>
+                      <span className="text-[11px] text-white font-medium block">Voz Neural de Alta Definição (Edge-TTS)</span>
+                      <span className="text-[10px] text-amadeus-muted">Voz humana com sincronia labial acústica</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={voiceSettings.useNeural !== false}
+                      onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, useNeural: e.target.checked })}
+                      className="accent-amadeus-accent w-4 h-4 cursor-pointer"
+                    />
                   </div>
 
-                  {showRvcAdvanced && (
-                    <div className="grid grid-cols-2 gap-3 pt-2 text-[10px]">
-                      <div>
-                        <label className="text-amadeus-muted block mb-1">
-                          Afinação / Pitch ({voiceSettings.rvcPitch ?? 0} semitons):
-                        </label>
-                        <input
-                          type="range"
-                          min="-6"
-                          max="6"
-                          step="1"
-                          value={voiceSettings.rvcPitch ?? 0}
-                          onChange={(e) =>
-                            onSaveVoiceSettings({
-                              ...voiceSettings,
-                              rvcPitch: parseInt(e.target.value, 10),
-                            })
-                          }
-                          className="w-full accent-amadeus-accent cursor-pointer"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-amadeus-muted block mb-1">
-                          Fidelidade de Timbre ({Math.round((voiceSettings.rvcIndexRate ?? 0.75) * 100)}%):
-                        </label>
-                        <input
-                          type="range"
-                          min="0.2"
-                          max="1.0"
-                          step="0.05"
-                          value={voiceSettings.rvcIndexRate ?? 0.75}
-                          onChange={(e) =>
-                            onSaveVoiceSettings({
-                              ...voiceSettings,
-                              rvcIndexRate: parseFloat(e.target.value),
-                            })
-                          }
-                          className="w-full accent-amadeus-accent cursor-pointer"
-                        />
-                      </div>
+                  {voiceSettings.useNeural !== false ? (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-amadeus-muted block">Voz Neural (IA):</label>
+                      <select
+                        value={voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural'}
+                        onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, neuralVoice: e.target.value })}
+                        className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                      >
+                        <option value="pt-BR-FranciscaNeural">Francisca Neural (Português BR - Natural & Expressiva)</option>
+                        <option value="pt-BR-ThalitaNeural">Thalita Neural (Português BR - Jovem & Rápida)</option>
+                        <option value="pt-BR-ElzaNeural">Elza Neural (Português BR - Calma & Séria)</option>
+                        <option value="ja-JP-NanamiNeural">Nanami Neural (Japonês - Anime Original)</option>
+                        <option value="ja-JP-AoiNeural">Aoi Neural (Japonês - Calma)</option>
+                        <option value="en-US-JennyNeural">Jenny Neural (Inglês - Cientista Viktor Chondria)</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-amadeus-muted block">Voz do Sistema (Navegador):</label>
+                      <select
+                        value={voiceSettings.voiceURI || ''}
+                        onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, voiceURI: e.target.value })}
+                        className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                      >
+                        <option value="">Padrão do Sistema</option>
+                        {availableVoices.map((v) => (
+                          <option key={v.voiceURI} value={v.voiceURI}>
+                            {v.name} ({v.lang})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+
+                {/* RVC Neural Voice Card (RTX 3050 GPU Acceleration) */}
+                <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                        <Sparkles className="w-3.5 h-3.5 text-amadeus-accent" />
+                        <span>CLONAGEM DE VOZ RVC (KURISU)</span>
+                      </div>
+                      <p className="text-[10px] text-amadeus-muted mt-0.5">
+                        Timbre da dubladora original acelerado na GPU RTX 3050 (FP16)
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(voiceSettings.useRvc)}
+                      onChange={(e) =>
+                        onSaveVoiceSettings({
+                          ...voiceSettings,
+                          useRvc: e.target.checked,
+                          useNeural: true,
+                        })
+                      }
+                      className="accent-amadeus-accent w-4 h-4 cursor-pointer"
+                    />
+                  </div>
+
+                  {voiceSettings.useRvc && (
+                    <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setShowRvcAdvanced((prev) => !prev)}
+                          className="text-[10px] text-amadeus-accent hover:underline flex items-center gap-1"
+                        >
+                          <span>{showRvcAdvanced ? '▼ Ocultar Ajustes Finos RVC' : '▶ Ajustes Finos de Tom & Timbre (Opcional)'}</span>
+                        </button>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
+                          CUDA FP16
+                        </span>
+                      </div>
+
+                      {showRvcAdvanced && (
+                        <div className="grid grid-cols-2 gap-3 pt-2 text-[10px]">
+                          <div>
+                            <label className="text-amadeus-muted block mb-1">
+                              Afinação / Pitch ({voiceSettings.rvcPitch ?? 0} semitons):
+                            </label>
+                            <input
+                              type="range"
+                              min="-6"
+                              max="6"
+                              step="1"
+                              value={voiceSettings.rvcPitch ?? 0}
+                              onChange={(e) =>
+                                onSaveVoiceSettings({
+                                  ...voiceSettings,
+                                  rvcPitch: parseInt(e.target.value, 10),
+                                })
+                              }
+                              className="w-full accent-amadeus-accent cursor-pointer"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-amadeus-muted block mb-1">
+                              Fidelidade de Timbre ({Math.round((voiceSettings.rvcIndexRate ?? 0.75) * 100)}%):
+                            </label>
+                            <input
+                              type="range"
+                              min="0.2"
+                              max="1.0"
+                              step="0.05"
+                              value={voiceSettings.rvcIndexRate ?? 0.75}
+                              onChange={(e) =>
+                                onSaveVoiceSettings({
+                                  ...voiceSettings,
+                                  rvcIndexRate: parseFloat(e.target.value),
+                                })
+                              }
+                              className="w-full accent-amadeus-accent cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Sample audio preview button */}
+            <button
+              type="button"
+              onClick={handleTestVoice}
+              disabled={isTestingVoice}
+              className="w-full h-8 rounded border border-amadeus-accent/40 bg-amadeus-accent/10 hover:bg-amadeus-accent hover:text-black text-amadeus-accent text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            >
+              {isTestingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+              <span>{isTestingVoice ? 'Reproduzindo Amostra...' : 'Ouvir Amostra de Voz'}</span>
+            </button>
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-amadeus-muted">Falar Resposta Automaticamente:</span>
