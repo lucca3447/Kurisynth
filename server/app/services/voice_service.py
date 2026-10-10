@@ -31,7 +31,12 @@ def clean_speech_text(text: str) -> str:
     clean_text = re.sub(r"<!--\s*remember:[^>]*-->", "", clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r"\*[^*]+\*", "", clean_text)
     clean_text = re.sub(r"[:;]-?[)(DPpOdD]", "", clean_text)
-    clean_text = re.sub(r"[*_~`#]", "", clean_text).strip()
+    clean_text = re.sub(r"[*_~`#\"'«»]", "", clean_text)
+    # Remove leading interjections that cause autoregressive TTS to gasp/hesitate frantically
+    clean_text = re.sub(r"^(?:Hmm+|Hum+|Uhm+|Ehh+|Ah+)[.…, ]*", "", clean_text, flags=re.IGNORECASE)
+    # Normalize excessive dots to a brief pause comma
+    clean_text = re.sub(r"\.{3,}", ", ", clean_text)
+    clean_text = re.sub(r"\s+", " ", clean_text).strip()
     return clean_text
 
 
@@ -94,6 +99,7 @@ async def synthesize_speech(
 
     # 1. Qwen3-TTS Direct Neural Path
     if engine == "qwen3":
+        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis | Emotion: '{emotion or 'neutral'}' | Text: \"{clean_text}\"")
         try:
             qwen_wav = await QwenTTSManager.synthesize(
                 text=clean_text,
