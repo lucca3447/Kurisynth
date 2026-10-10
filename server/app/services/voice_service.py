@@ -12,6 +12,7 @@ except ImportError:
     EDGE_TTS_AVAILABLE = False
 
 from app.services.rvc.rvc_manager import RVCManager
+from app.services.qwen_tts.qwen_manager import QwenTTSManager
 
 
 def check_edge_tts_available() -> bool:
@@ -74,27 +75,57 @@ async def synthesize_speech(
     use_rvc: bool = False,
     rvc_pitch: int = 0,
     rvc_index_rate: float = 0.75,
+    engine: str = "edge_rvc",
+    emotion: Optional[str] = None,
+    instruct: Optional[str] = None,
 ) -> Tuple[str, AsyncGenerator[bytes, None]]:
     """
     Synthesizes speech:
-    1. If use_rvc is False, streams Edge-TTS audio directly (audio/mpeg).
-    2. If use_rvc is True, converts Edge-TTS output using the Kurisu RVC Neural Worker
+    1. If engine == "qwen3": synthesizes directly in Makise Kurisu's voice using
+       resident Qwen3-TTS neural worker. Falls back to Edge-TTS+RVC if offline.
+    2. If engine == "edge_rvc" and use_rvc is False, streams Edge-TTS audio directly (audio/mpeg).
+    3. If engine == "edge_rvc" and use_rvc is True, converts Edge-TTS output using the Kurisu RVC Neural Worker
        into Makise Kurisu's cloned voice (audio/wav).
-    3. If RVC conversion fails, transparently falls back to Edge-TTS.
+    4. If conversion/Qwen fails, transparently falls back to Edge-TTS.
     """
-    if not use_rvc:
-        return "audio/mpeg", generate_edge_tts_stream(text, voice=voice, rate=rate, pitch=pitch)
+    clean_text = clean_speech_text(text)
+    if not clean_text:
+        raise HTTPException(status_code=400, detail="Texto não pode ser vazio para síntese de voz.")
 
-    # 1. Collect Edge-TTS audio chunks
+    # 1. Qwen3-TTS Direct Neural Path
+    if engine == "qwen3":
+        try:
+            qwen_wav = await QwenTTSManager.synthesize(
+                text=clean_text,
+                emotion=emotion,
+                custom_instruct=instruct,
+                language="Portuguese",
+            )
+            if qwen_wav:
+                async def _qwen_gen():
+                    yield qwen_wav
+                return "audio/wav", _qwen_gen()
+            print("[Amadeus Voice] Qwen3 indisponível ou falhou; fallback automático para Edge-TTS + RVC.")
+        except Exception as e:
+            print(f"[Amadeus Voice] Erro no Qwen3-TTS: {e}; chaveando para fallback Edge-TTS + RVC.")
+        
+        # Fallback to RVC if Qwen is requested but fails
+        use_rvc = True
+
+    # 2. Direct Edge-TTS (No RVC)
+    if not use_rvc:
+        return "audio/mpeg", generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch)
+
+    # 3. Collect Edge-TTS audio chunks for RVC conversion
     edge_chunks = []
-    async for chunk in generate_edge_tts_stream(text, voice=voice, rate=rate, pitch=pitch):
+    async for chunk in generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch):
         edge_chunks.append(chunk)
 
     edge_audio_bytes = b"".join(edge_chunks)
     if not edge_audio_bytes:
         raise HTTPException(status_code=500, detail="Falha ao gerar áudio base para conversão RVC.")
 
-    # 2. Attempt RVC conversion
+    # 4. Attempt RVC conversion
     try:
         converted_wav = await RVCManager.convert(
             audio_bytes=edge_audio_bytes,
@@ -110,8 +141,9 @@ async def synthesize_speech(
     except Exception as err:
         print(f"[Amadeus Voice] Falha na conversão RVC, executando fallback transparente: {err}")
 
-    # Fallback to base Edge-TTS
+    # 5. Final fallback to base Edge-TTS
     async def _fallback_gen():
         yield edge_audio_bytes
 
     return "audio/mpeg", _fallback_gen()
+

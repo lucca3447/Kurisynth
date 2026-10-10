@@ -15,6 +15,9 @@ async def text_to_speech(req: TTSRequest):
         use_rvc=bool(req.use_rvc),
         rvc_pitch=req.rvc_pitch or 0,
         rvc_index_rate=req.rvc_index_rate if req.rvc_index_rate is not None else 0.75,
+        engine=req.engine or "edge_rvc",
+        emotion=req.emotion,
+        instruct=req.instruct,
     )
     return StreamingResponse(audio_stream, media_type=content_type)
 
