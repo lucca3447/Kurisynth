@@ -1,6 +1,6 @@
 import io
 import re
-from typing import AsyncGenerator, Tuple, Union
+from typing import AsyncGenerator, Tuple, Union, Optional
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
