@@ -1,7 +1,9 @@
 import io
 import os
 import sys
+import re
 import threading
+import numpy as np
 import torch
 import soundfile as sf
 from contextlib import asynccontextmanager
@@ -75,6 +77,26 @@ def health_check():
     }
 
 
+def chunk_text_by_sentences(text: str, max_chars: int = 180) -> list[str]:
+    raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?\n])\s+', text) if s.strip()]
+    if not raw_sentences:
+        return [text]
+
+    chunks = []
+    current_chunk = ""
+    for s in raw_sentences:
+        if not current_chunk:
+            current_chunk = s
+        elif len(current_chunk) + len(s) + 1 <= max_chars:
+            current_chunk += " " + s
+        else:
+            chunks.append(current_chunk)
+            current_chunk = s
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
+
 @app.post("/synthesize")
 async def synthesize(req: SynthesizeRequest):
     global model
@@ -85,17 +107,33 @@ async def synthesize(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
+    chunks = chunk_text_by_sentences(text, max_chars=180)
+    print(f"[Qwen3 Worker] Synthesizing {len(text)} chars across {len(chunks)} chunk(s)...")
+
     try:
-        with torch.inference_mode():
-            wavs, sr = model.generate_custom_voice(
-                text=text,
-                speaker="kurisu",
-                language=req.language or "Portuguese",
-                instruct=req.instruct or None,
-            )
+        audio_pieces = []
+        sr_used = 24000
+
+        for i, chunk in enumerate(chunks):
+            with torch.inference_mode():
+                wavs, sr = model.generate_custom_voice(
+                    text=chunk,
+                    speaker="kurisu",
+                    language=req.language or "Portuguese",
+                    instruct=req.instruct or None,
+                )
+                audio_pieces.append(wavs[0])
+                sr_used = sr
+
+                # Insert 150ms natural breath pause between sentence chunks
+                if i < len(chunks) - 1:
+                    pause = np.zeros(int(sr * 0.15), dtype=wavs[0].dtype)
+                    audio_pieces.append(pause)
+
+        full_audio = np.concatenate(audio_pieces) if len(audio_pieces) > 1 else audio_pieces[0]
 
         buffer = io.BytesIO()
-        sf.write(buffer, wavs[0], sr, format="WAV")
+        sf.write(buffer, full_audio, sr_used, format="WAV")
         wav_bytes = buffer.getvalue()
 
         # Free transient CUDA cached memory

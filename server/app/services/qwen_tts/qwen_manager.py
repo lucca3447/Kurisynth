@@ -136,7 +136,8 @@ class QwenTTSManager:
         instruct = resolve_acoustic_instruct(emotion=emotion, custom_instruct=custom_instruct)
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            print(f"[Qwen3 Manager] Dispatching synthesis to worker (chars: {len(text)})...")
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 res = await client.post(
                     f"{WORKER_URL}/synthesize",
                     json={
@@ -148,6 +149,8 @@ class QwenTTSManager:
                 if res.status_code == 200:
                     return res.content
                 print(f"[Qwen3 Manager] Worker returned error {res.status_code}: {res.text}")
+        except httpx.TimeoutException:
+            print(f"[Qwen3 Manager] Synthesis timed out after 120s (utterance length: {len(text)} chars).")
         except Exception as e:
             print(f"[Qwen3 Manager] Communication error with worker: {e}")
 
