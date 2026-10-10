@@ -114,13 +114,15 @@ export const App: React.FC = () => {
     localStorage.setItem('amadeus_scanlines', String(enabled));
   };
 
-  const speak = (text: string) => {
+  const speak = (text: string, emotion?: string) => {
     if (!voiceSettings.enabled || !voiceSettings.autoSpeak) return;
     SpeechService.speak(text, {
       voiceURI: voiceSettings.voiceURI,
       rate: voiceSettings.rate,
       pitch: voiceSettings.pitch,
       volume: voiceSettings.volume,
+      engine: voiceSettings.engine || 'edge_rvc',
+      emotion,
       useNeural: voiceSettings.useNeural !== false,
       neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
       useRvc: Boolean(voiceSettings.useRvc),
@@ -200,7 +202,7 @@ export const App: React.FC = () => {
       MemoryService.saveActiveSession(sessionId, updatedHistory);
 
       // 3. Speak response with TTS if enabled
-      speak(result.response);
+      speak(result.response, result.emotion);
     } finally {
       setIsProcessing(false);
     }

@@ -18,6 +18,9 @@ export interface SpeakOptions {
   pitch?: number;
   volume?: number;
   lang?: string;
+  engine?: 'qwen3' | 'edge_rvc';
+  emotion?: string;
+  instruct?: string;
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
@@ -332,6 +335,9 @@ export class SpeechService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: cleanText,
+        engine: options.engine || (options.useRvc ? 'edge_rvc' : 'edge_rvc'),
+        emotion: options.emotion,
+        instruct: options.instruct,
         voice,
         rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
         pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
