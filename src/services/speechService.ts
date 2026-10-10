@@ -18,6 +18,9 @@ export interface SpeakOptions {
   pitch?: number;
   volume?: number;
   lang?: string;
+  engine?: 'qwen3' | 'edge_rvc';
+  emotion?: string;
+  instruct?: string;
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
@@ -304,16 +307,25 @@ export class SpeechService {
     const health = await BackendService.checkHealth().catch(() => null);
     const useNeural = options.useNeural !== false && Boolean(health && health.edgeTtsAvailable !== false);
 
-    if (useNeural) {
+    if (useNeural || options.engine === 'qwen3') {
       try {
         await this.speakNeural(cleanText, options);
         return;
-      } catch (err) {
-        console.warn('[SpeechService] Neural Edge-TTS playback failed, falling back to Web Speech:', err);
+      } catch (err: any) {
+        // If aborted or interrupted cleanly, do not fall back to robotic browser voice
+        if (err?.name === 'AbortError' || String(err?.message || '').includes('interrupted')) {
+          return;
+        }
+        console.warn('[SpeechService] Neural TTS playback failed:', err);
+        // Only fall back to browser Web Speech if user specifically enabled browser voice
+        if (options.engine !== 'qwen3' && options.useNeural === false) {
+          this.speakWebSpeech(cleanText, options);
+        }
+        return;
       }
     }
 
-    // Fallback to browser Web Speech API
+    // Fallback to browser Web Speech API only if explicitly configured
     this.speakWebSpeech(cleanText, options);
   }
 
@@ -332,6 +344,9 @@ export class SpeechService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: cleanText,
+        engine: options.engine || (options.useRvc ? 'edge_rvc' : 'edge_rvc'),
+        emotion: options.emotion,
+        instruct: options.instruct,
         voice,
         rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
         pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,

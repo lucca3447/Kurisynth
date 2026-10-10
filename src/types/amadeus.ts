@@ -90,6 +90,7 @@ export interface VoiceSettings {
   volume: number;
   autoSpeak: boolean;
   lang: string;
+  engine?: 'qwen3' | 'edge_rvc';
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
