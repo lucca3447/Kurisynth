@@ -45,6 +45,11 @@ scratch/
 server/weights/
 server/kurisurvc/
 server/rvc_env/
+server/qwen_env/
 server/rvc_assets/
+qwen_env/
+venv/
+.venv/
+teste*.py
 *.wav
 server/*.wav

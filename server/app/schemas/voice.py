@@ -5,6 +5,9 @@ class TTSRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     text: str
+    engine: Optional[str] = "edge_rvc"  # "qwen3" or "edge_rvc" / "edge"
+    emotion: Optional[str] = None
+    instruct: Optional[str] = None
     voice: Optional[str] = "pt-BR-FranciscaNeural"
     rate: Optional[str] = "+5%"
     pitch: Optional[str] = "+15Hz"
