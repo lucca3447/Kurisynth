@@ -307,16 +307,25 @@ export class SpeechService {
     const health = await BackendService.checkHealth().catch(() => null);
     const useNeural = options.useNeural !== false && Boolean(health && health.edgeTtsAvailable !== false);
 
-    if (useNeural) {
+    if (useNeural || options.engine === 'qwen3') {
       try {
         await this.speakNeural(cleanText, options);
         return;
-      } catch (err) {
-        console.warn('[SpeechService] Neural Edge-TTS playback failed, falling back to Web Speech:', err);
+      } catch (err: any) {
+        // If aborted or interrupted cleanly, do not fall back to robotic browser voice
+        if (err?.name === 'AbortError' || String(err?.message || '').includes('interrupted')) {
+          return;
+        }
+        console.warn('[SpeechService] Neural TTS playback failed:', err);
+        // Only fall back to browser Web Speech if user specifically enabled browser voice
+        if (options.engine !== 'qwen3' && options.useNeural === false) {
+          this.speakWebSpeech(cleanText, options);
+        }
+        return;
       }
     }
 
-    // Fallback to browser Web Speech API
+    // Fallback to browser Web Speech API only if explicitly configured
     this.speakWebSpeech(cleanText, options);
   }
 

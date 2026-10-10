@@ -17,10 +17,22 @@ CANDIDATE_PYTHONS = [
     os.path.join(SERVER_DIR, "venv", "Scripts", "python.exe"),
 ]
 
+import socket
+
 WORKER_SCRIPT = os.path.join(CURRENT_DIR, "qwen_worker.py")
 WORKER_URL = "http://127.0.0.1:8002"
 
 _worker_process: Optional[subprocess.Popen] = None
+_spawn_lock = asyncio.Lock()
+
+
+def is_port_in_use(port: int = 8002) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            return s.connect_ex(('127.0.0.1', port)) == 0
+    except Exception:
+        return False
 
 
 class QwenTTSManager:
@@ -46,6 +58,14 @@ class QwenTTSManager:
     @classmethod
     def start_worker_process(cls) -> bool:
         global _worker_process
+
+        # If port 8002 is already occupied, worker is already listening or initializing
+        if is_port_in_use(8002):
+            return True
+
+        if _worker_process is not None and _worker_process.poll() is None:
+            return True
+
         py_exe = cls.get_python_executable()
         if not py_exe or not os.path.exists(WORKER_SCRIPT):
             print(f"[Qwen3 Manager] Cannot start worker: python binary ({py_exe}) or script not found.")
@@ -94,23 +114,27 @@ class QwenTTSManager:
         if await cls.is_worker_healthy():
             return True
 
-        if not cls.start_worker_process():
-            return False
-
-        print("[Qwen3 Manager] Waiting for model to load into GPU memory...")
-        start_time = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start_time < max_wait_sec:
-            await asyncio.sleep(1.0)
-            status = await cls.get_worker_status()
-            if status == "ready":
-                print("[Qwen3 Manager] Qwen3 Worker is ready and resident in GPU memory!")
+        async with _spawn_lock:
+            if await cls.is_worker_healthy():
                 return True
-            if status and status.startswith("error:"):
-                print(f"[Qwen3 Manager] Worker reported initialization failure: {status}")
+
+            if not cls.start_worker_process():
                 return False
 
-        print("[Qwen3 Manager] Timeout waiting for Qwen3 Worker initialization.")
-        return False
+            print("[Qwen3 Manager] Waiting for model to load into GPU memory...")
+            start_time = asyncio.get_event_loop().time()
+            while asyncio.get_event_loop().time() - start_time < max_wait_sec:
+                await asyncio.sleep(1.0)
+                status = await cls.get_worker_status()
+                if status == "ready":
+                    print("[Qwen3 Manager] Qwen3 Worker is ready and resident in GPU memory!")
+                    return True
+                if status and status.startswith("error:"):
+                    print(f"[Qwen3 Manager] Worker reported initialization failure: {status}")
+                    return False
+
+            print("[Qwen3 Manager] Timeout waiting for Qwen3 Worker initialization.")
+            return False
 
     @classmethod
     async def synthesize(
