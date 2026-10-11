@@ -1,0 +1,38 @@
+services:
+  amadeus-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: amadeus-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server/data:/app/data
+      - ./server/weights:/app/weights
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    networks:
+      - amadeus-network
+
+  amadeus-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8000
+    container_name: amadeus-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      amadeus-backend:
+        condition: service_healthy
+    networks:
+      - amadeus-network
+
+networks:
+  amadeus-network:
+    driver: bridge
