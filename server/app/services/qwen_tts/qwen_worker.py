@@ -27,8 +27,28 @@ def _load_model_worker():
 
     try:
         from qwen_tts import Qwen3TTSModel
+        
+        # Check if model was cloned locally into weights or server root
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        server_root = os.path.abspath(os.path.join(current_file_dir, "..", "..", ".."))
+        local_candidates = [
+            os.path.join(server_root, "weights", "kurisu_qwen3"),
+            os.path.join(server_root, "Kurisu_Qwen3_TTS"),
+        ]
+        
+        model_source = "starrydark/Kurisu_Qwen3_TTS"
+        for candidate in local_candidates:
+            if os.path.isdir(candidate) and (
+                os.path.exists(os.path.join(candidate, "config.json"))
+                or any(fname.endswith(".safetensors") for fname in os.listdir(candidate))
+            ):
+                model_source = candidate
+                print(f"[Qwen3 Worker] Found local model directory: {model_source}")
+                break
+
+        print(f"[Qwen3 Worker] Loading model from '{model_source}'...")
         loaded_model = Qwen3TTSModel.from_pretrained(
-            "starrydark/Kurisu_Qwen3_TTS",
+            model_source,
             device_map=device_name,
             dtype=dtype_used,
         )

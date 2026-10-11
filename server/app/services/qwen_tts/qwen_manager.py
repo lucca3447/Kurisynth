@@ -13,8 +13,10 @@ SERVER_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
 # Candidate virtual environments with qwen-tts and torch+cu124 installed
 CANDIDATE_PYTHONS = [
     os.path.join(SERVER_DIR, "qwen_env", "Scripts", "python.exe"),
+    os.path.join(SERVER_DIR, "qwen_env", "bin", "python"),
     r"C:\codigos\qwentsskurisu\qwen_env\Scripts\python.exe",
     os.path.join(SERVER_DIR, "venv", "Scripts", "python.exe"),
+    os.path.join(SERVER_DIR, "venv", "bin", "python"),
 ]
 
 import socket
