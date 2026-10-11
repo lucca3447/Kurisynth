@@ -1,6 +1,7 @@
 import { ChatMessage, Emotion, MemoryItem, CallSession } from '../types/amadeus';
 
-const BACKEND_URL = 'http://localhost:8000';
+export const BACKEND_URL =
+  ((import.meta as any).env?.VITE_API_URL as string) || 'http://localhost:8000';
 
 export interface BackendHealth {
   status: string;

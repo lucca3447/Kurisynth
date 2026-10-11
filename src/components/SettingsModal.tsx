@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Key, Volume2, Monitor, HelpCircle, X, Check, Zap, Loader2, AlertTriangle, Sparkles } from 'lucide-react';
+import {
+  Settings,
+  Key,
+  Volume2,
+  Monitor,
+  HelpCircle,
+  X,
+  Check,
+  Zap,
+  Loader2,
+  AlertTriangle,
+  Sparkles,
+  ExternalLink,
+  Cpu,
+  Database,
+  Heart,
+  Layers,
+} from 'lucide-react';
 import { VoiceSettings } from '../types/amadeus';
 import { SpeechService } from '../services/speechService';
 import { AIService } from '../services/aiService';
@@ -25,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   scanlines,
   onToggleScanlines,
 }) => {
+  const [activeTab, setActiveTab] = useState<'settings' | 'credits'>('settings');
   const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -106,8 +124,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-amadeus-border bg-amadeus-card/60 text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('settings')}
+            className={`flex-1 py-2.5 px-4 font-bold flex items-center justify-center gap-2 border-b-2 transition-all ${
+              activeTab === 'settings'
+                ? 'border-amadeus-accent text-amadeus-accent bg-amadeus-accent/10'
+                : 'border-transparent text-amadeus-muted hover:text-white'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>CONFIGURAÇÃO</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('credits')}
+            className={`flex-1 py-2.5 px-4 font-bold flex items-center justify-center gap-2 border-b-2 transition-all ${
+              activeTab === 'credits'
+                ? 'border-amadeus-accent text-amadeus-accent bg-amadeus-accent/10'
+                : 'border-transparent text-amadeus-muted hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>CRÉDITOS & MODELOS</span>
+          </button>
+        </div>
+
+        {activeTab === 'settings' ? (
+          /* Content */
+          <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
           {/* Section: Groq, Gemini & OpenRouter API Key */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
@@ -187,7 +234,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>Kurisu Qwen3-TTS</span>
                   </div>
                   <p className="text-[9px] mt-0.5 text-amadeus-muted">
-                    End-to-End Neural (RTX 3050 | Suspiros & Tsundere)
+                    End-to-End Neural (GPU CUDA | Suspiros & Tsundere)
                   </p>
                 </button>
 
@@ -219,7 +266,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>QWEN3-TTS KURISU (RESIDENT GPU)</span>
                   </div>
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
-                    CUDA BF16 (RTX 3050)
+                    CUDA BF16 (NVIDIA GPU)
                   </span>
                 </div>
                 <p className="text-[10px] text-amadeus-muted leading-relaxed">
@@ -287,7 +334,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <span>CLONAGEM DE VOZ RVC (KURISU)</span>
                       </div>
                       <p className="text-[10px] text-amadeus-muted mt-0.5">
-                        Timbre da dubladora original acelerado na GPU RTX 3050 (FP16)
+                        Timbre da dubladora original acelerado por GPU (CUDA FP16)
                       </p>
                     </div>
                     <input
@@ -433,27 +480,189 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               />
             </div>
           </div>
-        </div>
+          </div>
+        ) : (
+          /* Credits & Models Tab */
+          <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+            {/* Header info */}
+            <div className="p-3.5 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-1.5 font-mono">
+              <div className="flex items-center gap-2 text-xs font-bold text-amadeus-accent">
+                <Cpu className="w-4 h-4 text-amadeus-accent" />
+                <span>RECONHECIMENTOS & INFRAESTRUTURA NEURAL</span>
+              </div>
+              <p className="text-[11px] text-amadeus-muted leading-relaxed font-sans">
+                O Amadeus System opera através da integração de modelos neurais de ponta, pesos especializados da comunidade open-source e motores de voz de estúdio.
+              </p>
+            </div>
+
+            {/* Model 1: Kurisu Qwen3-TTS */}
+            <div className="p-4 rounded-xl border border-amadeus-accent/40 bg-amadeus-card hover:border-amadeus-accent transition-colors space-y-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amadeus-accent shrink-0" />
+                    <h3 className="text-xs font-bold font-mono text-white tracking-wide">
+                      Kurisu Qwen3-TTS (Novo Motor de Voz)
+                    </h3>
+                  </div>
+                  <p className="text-[10px] text-amadeus-muted font-mono mt-0.5">
+                    starrydark / Kurisu_Qwen3_TTS • Alibaba Qwen3-TTS 1.7B
+                  </p>
+                </div>
+                <a
+                  href="https://huggingface.co/starrydark/Kurisu_Qwen3_TTS"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-amadeus-accent/10 border border-amadeus-accent/40 text-[10px] text-amadeus-accent font-mono hover:bg-amadeus-accent hover:text-black transition-colors shrink-0"
+                >
+                  <span>HuggingFace</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                Motor neural <em>end-to-end</em> baseado na arquitetura Alibaba Qwen3-TTS (1.7 Bilhões de parâmetros), com pesos treinados especificamente na voz, entonações emocionais, suspiros e reações <em>tsundere</em> de Makise Kurisu. Executa inferência local em GPU via PyTorch 2.6 CUDA com acústica de estúdio seco.
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-accent">
+                  Alibaba Qwen3-TTS
+                </span>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-muted">
+                  PyTorch 2.6 cu124 BF16
+                </span>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-muted">
+                  Resident Worker :8002
+                </span>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-muted">
+                  150ms Breath Pauses
+                </span>
+              </div>
+            </div>
+
+            {/* Model 2: Kurisu RVC v2 */}
+            <div className="p-4 rounded-xl border border-amadeus-border bg-amadeus-card hover:border-amadeus-accent/60 transition-colors space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-amadeus-accent shrink-0" />
+                    <h3 className="text-xs font-bold font-mono text-white">
+                      Kurisu RVC v2 (Conversão de Timbre)
+                    </h3>
+                  </div>
+                  <p className="text-[10px] text-amadeus-muted font-mono mt-0.5">
+                    FrancescoCaracciolo / Kurisu-RVC • Asami Imai (今井 麻美)
+                  </p>
+                </div>
+                <a
+                  href="https://huggingface.co/FrancescoCaracciolo/Kurisu-RVC/tree/main"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-amadeus-accent/10 border border-amadeus-accent/40 text-[10px] text-amadeus-accent font-mono hover:bg-amadeus-accent hover:text-black transition-colors shrink-0"
+                >
+                  <span>HuggingFace</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                Clonagem e conversão acústica de timbre em tempo real treinada sobre a voz oficial da dubladora japonesa de Makise Kurisu. Utiliza os pesos <code className="text-amadeus-accent font-mono text-[10px]">KurisuRVCv147.pth</code> e índice <code className="text-amadeus-accent font-mono text-[10px]">KurisuRVCv147.index</code> com extração harmônica RMVPE e HuBERT.
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-accent">
+                  RVC v2
+                </span>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-muted">
+                  CUDA FP16
+                </span>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-black/40 border border-amadeus-border text-amadeus-muted">
+                  Worker :8001
+                </span>
+              </div>
+            </div>
+
+            {/* Model 3: Microsoft Edge-TTS */}
+            <div className="p-4 rounded-xl border border-amadeus-border bg-amadeus-card space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-amadeus-accent shrink-0" />
+                    <h3 className="text-xs font-bold font-mono text-white">
+                      Microsoft Edge Neural TTS
+                    </h3>
+                  </div>
+                  <p className="text-[10px] text-amadeus-muted font-mono mt-0.5">
+                    Azure Cognitive Services
+                  </p>
+                </div>
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-amadeus-card border border-amadeus-border text-amadeus-muted">
+                  Cloud Neural
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                Geração de áudio neural de alta fluidez em Português do Brasil (<code className="text-amadeus-accent font-mono text-[10px]">FranciscaNeural</code>, <code className="text-amadeus-accent font-mono text-[10px]">ThalitaNeural</code>) e Japonês (<code className="text-amadeus-accent font-mono text-[10px]">NanamiNeural</code>), servindo como base acústica e fallback automático instantâneo.
+              </p>
+            </div>
+
+            {/* Model 4: Memória & LLMs */}
+            <div className="p-4 rounded-xl border border-amadeus-border bg-amadeus-card space-y-2">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-amadeus-accent shrink-0" />
+                <h3 className="text-xs font-bold font-mono text-white">
+                  Memória Semântica & Modelos de Linguagem
+                </h3>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                <strong>ChromaDB + SQLite:</strong> Armazenamento vetorial local para recuperação de memórias semânticas (RAG) e contexto de longo prazo.<br />
+                <strong>LLMs Suportadas:</strong> Groq Cloud LPU (Llama 3.3 70B Versatile), Google Gemini 2.5 Flash / Pro, e OpenRouter.
+              </p>
+            </div>
+
+            {/* Disclaimer / Steins;Gate Lore */}
+            <div className="p-3.5 rounded-lg border border-amadeus-border/60 bg-black/40 space-y-1.5 text-[10px] text-amadeus-muted leading-relaxed font-sans">
+              <div className="flex items-center gap-1.5 font-bold text-amadeus-muted font-mono">
+                <Heart className="w-3.5 h-3.5 text-amadeus-red shrink-0" />
+                <span>DIREITOS & UNIVERSO ORIGINAL</span>
+              </div>
+              <p>
+                Makise Kurisu e o projeto Amadeus pertencem ao universo de <strong>Steins;Gate</strong> e <strong>Steins;Gate 0</strong>, criações originais de <strong>Chiyomaru Shikura</strong>, <strong>MAGES. / 5pb.</strong>, <strong>Nitroplus</strong> e <strong>White Fox</strong>.
+              </p>
+              <p>
+                Este software é um projeto conceitual e experimental desenvolvido para fins de pesquisa, estudo em inteligência artificial e homenagem de fã.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-amadeus-border bg-amadeus-card flex items-center justify-between">
           <span className="text-[11px] text-amadeus-muted">
-            Configurações salvas localmente
+            {activeTab === 'settings'
+              ? 'Configurações salvas localmente'
+              : 'Amadeus System // Viktor Chondria Lab 304'}
           </span>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="px-3.5 py-1.5 rounded bg-amadeus-border/60 hover:bg-amadeus-border text-white text-xs transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-1.5 rounded bg-amadeus-accent text-black font-bold text-xs flex items-center gap-1.5 hover:bg-[#00e676] transition-colors"
-            >
-              {savedSuccess ? <Check className="w-3.5 h-3.5" /> : null}
-              <span>{savedSuccess ? 'Salvo!' : 'Salvar Alterações'}</span>
-            </button>
+            {activeTab === 'settings' ? (
+              <>
+                <button
+                  onClick={onClose}
+                  className="px-3.5 py-1.5 rounded bg-amadeus-border/60 hover:bg-amadeus-border text-white text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-1.5 rounded bg-amadeus-accent text-black font-bold text-xs flex items-center gap-1.5 hover:bg-[#00e676] transition-colors"
+                >
+                  {savedSuccess ? <Check className="w-3.5 h-3.5" /> : null}
+                  <span>{savedSuccess ? 'Salvo!' : 'Salvar Alterações'}</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="px-4 py-1.5 rounded bg-amadeus-accent text-black font-bold text-xs hover:bg-[#00e676] transition-colors"
+              >
+                Fechar
+              </button>
+            )}
           </div>
         </div>
       </div>

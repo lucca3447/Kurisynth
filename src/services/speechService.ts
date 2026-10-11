@@ -1,4 +1,4 @@
-import { BackendService } from './backendService';
+import { BackendService, BACKEND_URL } from './backendService';
 
 export type SpeechCallback = (text: string) => void;
 export type SpeechStateCallback = (isListening: boolean) => void;
@@ -339,7 +339,7 @@ export class SpeechService {
     const rate = options.rate ? `${Math.round((options.rate - 1) * 100)}%` : '+4%';
     const pitch = options.pitch ? `${Math.round((options.pitch - 1) * 20)}Hz` : '+10Hz';
 
-    const res = await fetch('http://localhost:8000/api/tts', {
+    const res = await fetch(`${BACKEND_URL}/api/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
