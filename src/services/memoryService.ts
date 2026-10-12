@@ -288,6 +288,21 @@ export class MemoryService {
     }
   }
 
+  static loadSession(sessionId: string): ChatMessage[] | null {
+    const logs = this.getSessionLogs();
+    const found = logs.find((s) => s.id === sessionId);
+    if (found && found.messages) {
+      this.saveActiveSession(found.id, found.messages);
+      return found.messages;
+    }
+    return null;
+  }
+
+  static deleteSession(sessionId: string): void {
+    const logs = this.getSessionLogs().filter((s) => s.id !== sessionId);
+    localStorage.setItem(STORAGE_SESSIONS_LOG, JSON.stringify(logs));
+  }
+
   // --- Export / Import ---
 
   static exportMemoriesJSON(personaId: string): string {
