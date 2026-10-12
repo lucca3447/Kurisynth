@@ -8,13 +8,15 @@ interface AmadeusSpriteViewProps {
   pose?: CharacterPose;
   isSpeaking: boolean;
   scanlines?: boolean;
+  className?: string;
 }
 
 export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
   emotion,
   pose = 'default',
   isSpeaking,
-  scanlines = true,
+  scanlines = false,
+  className = '',
 }) => {
   const [mouthState, setMouthState] = useState<MouthState>('closed');
   const [isBlinking, setIsBlinking] = useState(false);
@@ -100,63 +102,30 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
   }, [isSpeaking]);
 
   // Determine current image frame based on canonical matrix, pose, speech, and blink
-  // Active blink is suppressed while speaking to preserve lip-sync stability
   const activeBlinking = isBlinking && !isSpeaking;
   const currentFrameUrl = resolveKurisuSprite(emotion, mouthState, activeBlinking, pose);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#060a08] via-[#09110d] to-[#040806]">
-      {/* Sci-fi Background Grid & Vignette */}
-      <div 
-        className="absolute inset-0 opacity-15"
-        style={{
-          backgroundImage: `
-            radial-gradient(circle, #00ff88 1px, transparent 1px),
-            linear-gradient(to right, rgba(0, 255, 136, 0.05) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(0, 255, 136, 0.05) 1px, transparent 1px)
-          `,
-          backgroundSize: '30px 30px, 60px 60px, 60px 60px'
-        }}
-      />
-
-      {/* Target Crosshairs / Scientific Reticle */}
-      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-amadeus-accent/40" />
-      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-amadeus-accent/40" />
-      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-amadeus-accent/40" />
-      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-amadeus-accent/40" />
-
-      {/* Video Connection Metadata */}
-      <div className="absolute top-4 left-12 text-[11px] font-mono text-amadeus-muted tracking-widest flex items-center gap-2">
-        <span className="text-amadeus-accent">FEED // LAB_304_CAM_01</span>
-        <span className="opacity-50">|</span>
-        <span>RESOLUTION: 1080P_RAW</span>
-      </div>
-
-      <div className="absolute top-4 right-12 text-[11px] font-mono text-amadeus-accent/80 tracking-wider flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full bg-amadeus-accent animate-pulse" />
-        <span>FPS: 60.0</span>
-      </div>
-
+    <div className={`relative w-full h-full flex items-center justify-center overflow-hidden select-none ${className}`}>
       {/* Character Sprite Container */}
-      <div className="relative z-10 w-full h-full flex items-end justify-center select-none pointer-events-none pb-2">
-        {/* Subtle breathing animation applied to avatar wrapper */}
-        <div className="relative max-h-[92%] flex items-end justify-center transition-transform duration-700 ease-in-out">
+      <div className="relative z-10 w-full h-full flex items-end justify-center pointer-events-none pb-2">
+        <div className="relative max-h-[95%] flex items-end justify-center transition-transform duration-700 ease-in-out">
           <img
             src={currentFrameUrl}
             alt="Amadeus Makise Kurisu"
-            className="max-h-[82vh] w-auto object-contain filter drop-shadow-[0_0_25px_rgba(0,255,136,0.15)] transition-opacity duration-150"
+            className="max-h-[78vh] w-auto object-contain filter drop-shadow-[0_0_30px_rgba(245,158,11,0.22)] transition-opacity duration-150"
             draggable={false}
           />
         </div>
       </div>
 
-      {/* CRT Scanline Overlay (Toggleable) */}
+      {/* Local Scanline Overlay if enabled specifically */}
       {scanlines && (
         <div className="absolute inset-0 crt-scanlines pointer-events-none z-20" />
       )}
 
-      {/* Subtle CRT Phosphor Glow Vignette */}
-      <div className="absolute inset-0 pointer-events-none z-20 shadow-[inset_0_0_80px_rgba(0,0,0,0.85)]" />
+      {/* Subtle Depth Vignette */}
+      <div className="absolute inset-0 pointer-events-none z-20 shadow-[inset_0_0_90px_rgba(0,0,0,0.85)]" />
     </div>
   );
 };
