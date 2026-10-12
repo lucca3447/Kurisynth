@@ -1,10 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, Cpu, ShieldCheck, Database, RefreshCw } from 'lucide-react';
+import { 
+  MessageSquare, 
+  Video, 
+  Tv, 
+  Menu, 
+  Cpu, 
+  Database, 
+  RefreshCw 
+} from 'lucide-react';
 import { AIStatus } from '../services/aiService';
 import { BackendHealth } from '../services/backendService';
 import { DivergenceMeter } from './DivergenceMeter';
 
 interface CallHeaderProps {
+  viewMode?: 'terminal' | 'call';
+  onSwitchViewMode?: (mode: 'terminal' | 'call') => void;
+  scanlines?: boolean;
+  onToggleScanlines?: () => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
   isCalling: boolean;
   aiStatus: AIStatus;
   personaName: string;
@@ -13,6 +27,12 @@ interface CallHeaderProps {
 }
 
 export const CallHeader: React.FC<CallHeaderProps> = ({
+  viewMode = 'terminal',
+  onSwitchViewMode,
+  scanlines = false,
+  onToggleScanlines,
+  isSidebarOpen = true,
+  onToggleSidebar,
   isCalling,
   aiStatus,
   personaName,
@@ -42,117 +62,132 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-amadeus-border bg-amadeus-panel/95 backdrop-blur px-4 flex items-center justify-between z-30 select-none">
-      {/* Left: Lab & System ID */}
+    <header className="relative z-30 h-14 border-b border-[#222634] bg-[#12151c]/95 backdrop-blur-md px-4 flex items-center justify-between font-mono select-none">
+      {/* Left: Sidebar Toggle & Brand */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded border border-amadeus-accent/40 bg-amadeus-card flex items-center justify-center">
-          <span className="text-amadeus-accent font-mono font-bold text-sm tracking-tighter">A</span>
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-amadeus-accent tracking-wider text-glow-green">
-              AMADEUS OS v2.1.0
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amadeus-border/60 text-amadeus-muted font-mono">
-              BUILD 2026.10
-            </span>
-          </div>
-          <div className="text-[11px] font-mono text-amadeus-muted">
-            VIKTOR CHONDRIA UNIVERSITY // LAB 304
-          </div>
-        </div>
-      </div>
-
-      {/* Center: Connection Status, Timer & Nova Chamada */}
-      <div className="flex items-center gap-3">
-        {isCalling ? (
-          <div className="flex items-center gap-2.5 px-3 py-1 rounded bg-[#091510] border border-amadeus-accent/40">
-            <span className="w-2 h-2 rounded-full bg-amadeus-accent animate-ping" />
-            <span className="text-xs font-mono text-amadeus-accent tracking-widest font-semibold">
-              CONNECTED: {personaName.toUpperCase()}
-            </span>
-            <span className="text-xs font-mono text-[#a0c5b5] font-bold ml-1">
-              [{formatTimer(elapsedSeconds)}]
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-3 py-1 rounded bg-amadeus-card border border-amadeus-border">
-            <span className="w-2 h-2 rounded-full bg-amadeus-amber" />
-            <span className="text-xs font-mono text-amadeus-amber tracking-widest">
-              STANDBY // LAB READY
-            </span>
-          </div>
-        )}
-
-        {isCalling && onNewCall && (
+        {onToggleSidebar && viewMode === 'terminal' && (
           <button
-            onClick={onNewCall}
-            title="Arquiva a conversa atual e inicia uma nova chamada com a Kurisu"
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded border border-amadeus-border bg-amadeus-card text-[11px] text-amadeus-muted hover:text-white hover:border-amadeus-accent transition-colors"
+            onClick={onToggleSidebar}
+            title={isSidebarOpen ? 'Recolher Barra Lateral (Ctrl+B)' : 'Expandir Barra Lateral (Ctrl+B)'}
+            className="p-1.5 rounded-lg border border-[#2a3040] bg-[#1a1e28] text-[#f59e0b] hover:text-white hover:border-[#f59e0b] transition-colors"
           >
-            <RefreshCw className="w-3 h-3 text-amadeus-accent" />
-            <span>Nova Chamada</span>
+            <Menu className="w-4 h-4" />
           </button>
         )}
 
-        {/* Divergence Meter (Nixie Tubes) */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded border border-[#f59e0b]/50 bg-[#1a1208] flex items-center justify-center font-bold text-sm text-[#f59e0b] text-glow-nixie">
+            A
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-bold text-[#f59e0b] tracking-wider text-glow-nixie leading-none">
+              AMADEUS
+            </span>
+            {isCalling && (
+              <span className="text-[10px] text-[#717d96] font-mono leading-tight mt-0.5">
+                {personaName.toUpperCase()} • {formatTimer(elapsedSeconds)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Center: View Mode Switcher (Iconic) & Divergence Meter */}
+      <div className="flex items-center gap-3">
+        {onSwitchViewMode && (
+          <div className="flex items-center p-1 rounded-lg border border-[#272d3a] bg-[#141720]">
+            <button
+              onClick={() => onSwitchViewMode('terminal')}
+              title="Modo Terminal & Chat"
+              className={`p-1.5 px-2.5 rounded-md text-xs font-semibold flex items-center justify-center transition-all ${
+                viewMode === 'terminal'
+                  ? 'bg-[#f59e0b] text-black shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                  : 'text-[#8892a4] hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <span className="text-[#f59e0b]/30 text-xs px-1 font-bold">✛</span>
+            <button
+              onClick={() => onSwitchViewMode('call')}
+              title="Modo Chamada com Kurisu"
+              className={`p-1.5 px-2.5 rounded-md text-xs font-semibold flex items-center justify-center transition-all ${
+                viewMode === 'call'
+                  ? 'bg-[#f59e0b] text-black shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                  : 'text-[#8892a4] hover:text-white'
+              }`}
+            >
+              <Video className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Divergence Meter Nixie Tube Box */}
         <DivergenceMeter />
       </div>
 
+      {/* Right: CRT Button, Model Badge & Actions */}
+      <div className="flex items-center gap-2 text-xs">
+        {/* CRT Toggle Button */}
+        {onToggleScanlines && (
+          <button
+            onClick={onToggleScanlines}
+            title="Alternar Estilo CRT de Monitor de Tubo (Scanlines)"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-all font-mono text-xs ${
+              scanlines
+                ? 'bg-[#201509] border border-[#f59e0b] text-[#f59e0b] box-glow-nixie'
+                : 'bg-[#161a22] border border-[#2d3546] text-[#94a3b8] hover:text-[#f59e0b] hover:border-[#f59e0b]/50'
+            }`}
+          >
+            <Tv className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-semibold tracking-wider">CRT</span>
+          </button>
+        )}
 
-      {/* Right: Storage Engine, AI Indicator & Signal */}
-      <div className="flex items-center gap-3 text-xs font-mono">
-        {/* ChromaDB + SQLite indicator */}
-        <div className="hidden lg:flex items-center">
-          {backendHealth ? (
+        {/* New Call Button (if in call view) */}
+        {onNewCall && viewMode === 'call' && (
+          <button
+            onClick={onNewCall}
+            title="Reiniciar Chamada com a Kurisu"
+            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded border border-[#2d3546] bg-[#161a22] text-[#94a3b8] hover:text-[#f59e0b] hover:border-[#f59e0b]/50 transition-colors"
+          >
+            <RefreshCw className="w-3 h-3 text-[#f59e0b]" />
+            <span className="text-[10px]">REINICIAR</span>
+          </button>
+        )}
+
+        {/* ChromaDB + SQLite indicator (if health present) */}
+        {backendHealth && (
+          <div className="hidden xl:flex items-center">
             <span
-              title={`Armazenamento Python ativo: ChromaDB (${backendHealth.chromaCount} vetores) e SQLite (${backendHealth.totalSessions} sessões)`}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-amadeus-accent/40 bg-amadeus-card text-[10px] text-amadeus-accent"
+              title={`Armazenamento: ChromaDB (${backendHealth.chromaCount} vetores) e SQLite (${backendHealth.totalSessions} sessões)`}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#38bdf8]/30 bg-[#141822] text-[10px] text-[#38bdf8]"
             >
               <Database className="w-3 h-3" />
-              <span>CHROMA + SQLITE</span>
+              <span>CHROMA</span>
             </span>
-          ) : (
-            <span
-              title="Armazenamento local no navegador (LocalStorage)"
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-amadeus-border bg-amadeus-card text-[10px] text-amadeus-muted"
-            >
-              <Database className="w-3 h-3" />
-              <span>LOCAL BROWSER</span>
-            </span>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* AI Engine Model badge */}
-        <div className="hidden sm:flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161a22] border border-[#2d3546] text-[#e2e8f0]">
           {(() => {
             const badge = {
-              online: { color: 'text-amadeus-accent border-amadeus-accent/50', dot: 'bg-amadeus-accent', label: `IA: ${aiStatus.kind === 'online' ? aiStatus.model.toUpperCase() : ''}` },
-              pending: { color: 'text-amadeus-cyan border-amadeus-cyan/40', dot: 'bg-amadeus-cyan animate-pulse', label: 'IA: AGUARDANDO RESPOSTA' },
-              error: { color: 'text-amadeus-red border-amadeus-red/60', dot: 'bg-amadeus-red animate-pulse', label: 'ERRO NA IA' },
-              offline: { color: 'text-amadeus-amber border-amadeus-amber/40', dot: 'bg-amadeus-amber', label: 'SIMULADOR OFFLINE' },
+              online: { color: 'text-[#f59e0b]', dot: 'bg-[#f59e0b]', label: aiStatus.kind === 'online' ? aiStatus.model.toUpperCase() : 'ONLINE' },
+              pending: { color: 'text-[#38bdf8]', dot: 'bg-[#38bdf8] animate-pulse', label: 'PROCESSANDO' },
+              error: { color: 'text-[#ef4444]', dot: 'bg-[#ef4444] animate-pulse', label: 'ERRO IA' },
+              offline: { color: 'text-[#fbbf24]', dot: 'bg-[#fbbf24]', label: 'SIMULADOR LOCAL' },
             }[aiStatus.kind];
             return (
-              <span
-                title={aiStatus.kind === 'error' ? aiStatus.message : undefined}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded border bg-amadeus-card text-[11px] ${badge.color}`}
-              >
-                <Cpu className="w-3.5 h-3.5" />
+              <>
+                <Cpu className="w-3.5 h-3.5 text-[#f59e0b]" />
                 <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                <span>{badge.label}</span>
-              </span>
+                <span className={`text-[11px] font-semibold tracking-wider ${badge.color}`}>
+                  {badge.label}
+                </span>
+              </>
             );
           })()}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-amadeus-accent">
-          <Wifi className="w-3.5 h-3.5" />
-          <span className="text-[11px] tracking-wider">98.4%</span>
-        </div>
-
-        <div className="flex items-center gap-1 text-[#4ade80]">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span className="text-[10px] hidden md:inline">SECURE</span>
         </div>
       </div>
     </header>
