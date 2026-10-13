@@ -8,6 +8,8 @@ import {
   ChevronDown
 } from 'lucide-react';
 
+import { MODEL_OPTIONS } from '../services/aiService';
+
 interface PromptBarProps {
   onSendMessage: (text: string) => void;
   isListening: boolean;
@@ -19,11 +21,11 @@ interface PromptBarProps {
   disabled?: boolean;
 }
 
-const TOPICS = [
-  'Quem é você e qual seu papel no laboratório?',
-  'O que você acha sobre viagem no tempo e linhas de mundo?',
-  'Como funciona sua pesquisa na Viktor Chondria?',
-  'Qual sua opinião sincera sobre refrigerante Dr Pepper?',
+const SUGGESTED_TOPICS = [
+  { label: 'Identidade', prompt: 'Quem é você e qual seu papel no laboratório?' },
+  { label: 'Viagem no Tempo', prompt: 'O que você acha sobre viagem no tempo e linhas de mundo?' },
+  { label: 'Viktor Chondria', prompt: 'Como funciona sua pesquisa na Viktor Chondria?' },
+  { label: 'Dr Pepper', prompt: 'Qual sua opinião sincera sobre refrigerante Dr Pepper?' },
 ];
 
 export const PromptBar: React.FC<PromptBarProps> = ({
@@ -77,14 +79,14 @@ export const PromptBar: React.FC<PromptBarProps> = ({
           <Sparkles className="w-3 h-3 text-[#f59e0b]" />
           <span>SUGESTÕES:</span>
         </span>
-        {TOPICS.map((topic, i) => (
+        {SUGGESTED_TOPICS.map((topic, i) => (
           <button
             key={i}
             type="button"
-            onClick={() => handleFillTopic(topic)}
+            onClick={() => handleFillTopic(topic.prompt)}
             className="px-2.5 py-1 rounded-full bg-[#181c24] border border-[#272d3c] text-[#cbd5e1] hover:text-[#f59e0b] hover:border-[#f59e0b]/60 transition-colors whitespace-nowrap font-sans text-xs"
           >
-            {topic.split(' ')[0]} {topic.split(' ')[1]}...
+            {topic.label}
           </button>
         ))}
       </div>
@@ -118,10 +120,11 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                   onChange={(e) => onSelectModel(e.target.value)}
                   className="appearance-none bg-[#161922] border border-[#2a3040] text-[#e2e8f0] text-[11px] font-mono rounded-lg pl-2.5 pr-6 py-1 focus:outline-none focus:border-[#f59e0b] cursor-pointer"
                 >
-                  <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash</option>
-                  <option value="gemini-flash-lite">💡 Flash Lite</option>
-                  <option value="gemini-pro">🧠 Gemini 2.5 Pro</option>
-                  <option value="local-qwen">🖥️ Simulação Offline</option>
+                  {MODEL_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown className="w-3 h-3 text-[#717d96] absolute right-1.5 top-2 pointer-events-none" />
               </div>

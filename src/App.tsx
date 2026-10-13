@@ -9,7 +9,7 @@ import {
   MemoryItem
 } from './types/amadeus';
 import { MemoryService } from './services/memoryService';
-import { AIService, AIStatus } from './services/aiService';
+import { AIService, AIStatus, MODEL_OPTIONS } from './services/aiService';
 import { BackendService, BackendHealth } from './services/backendService';
 import { SpeechService } from './services/speechService';
 import { CallHeader } from './components/CallHeader';
@@ -49,7 +49,15 @@ export const App: React.FC = () => {
   });
 
   // Active AI Model
-  const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-flash');
+  const [currentModel, setCurrentModel] = useState<string>(() => {
+    const saved = localStorage.getItem('amadeus_selected_model');
+    return MODEL_OPTIONS.some((m) => m.id === saved) ? (saved as string) : MODEL_OPTIONS[0].id;
+  });
+
+  const handleSelectModel = (model: string) => {
+    setCurrentModel(model);
+    localStorage.setItem('amadeus_selected_model', model);
+  };
 
   // Persona and cognitive state
   const [persona, setPersona] = useState<PersonaProfile>(() => MemoryService.getPersona('kurisu'));
@@ -57,6 +65,7 @@ export const App: React.FC = () => {
   const [currentPose, setCurrentPose] = useState<CharacterPose>('default');
   const [recalledMemoryIds, setRecalledMemoryIds] = useState<string[]>([]);
   const [learnedNotification, setLearnedNotification] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   // Active Session & History
   const [sessionId, setSessionId] = useState<string>(() => MemoryService.getActiveSession().sessionId);
@@ -216,11 +225,15 @@ export const App: React.FC = () => {
     const nextHistory = [...history, userMessage];
     setHistory(nextHistory);
     MemoryService.saveActiveSession(sessionId, nextHistory);
+    setErrorNotice(null);
     setIsProcessing(true);
+    // Immediate visual feedback while the model is working
+    setCurrentEmotion('thinking');
+    setCurrentPose('crossed_arms');
 
     try {
       // 2. Query Amadeus (via Python backend with ChromaDB if available, or direct browser-side)
-      const result = await AIService.queryAmadeus(text, persona, matched, apiKey, nextHistory, sessionId);
+      const result = await AIService.queryAmadeus(text, persona, matched, apiKey, nextHistory, sessionId, currentModel);
 
       setAiStatus(result.status);
       setCurrentSubtitle(result.response);
@@ -234,6 +247,10 @@ export const App: React.FC = () => {
       }
 
       if (result.isError) {
+        // Visible in terminal mode too; intentionally not stored in the session history.
+        setErrorNotice(result.response);
+        setCurrentEmotion('worried');
+        setCurrentPose('default');
         return;
       }
 
@@ -269,8 +286,11 @@ export const App: React.FC = () => {
       speak(result.response, result.emotion);
     } catch (err: any) {
       console.error('Failed to query Amadeus:', err);
-      setCurrentSubtitle('[ERRO DE CONEXÃO COM O AMADEUS]');
+      const message = '[ERRO DE CONEXÃO COM O AMADEUS]';
+      setCurrentSubtitle(message);
+      setErrorNotice(message);
       setCurrentEmotion('worried');
+      setCurrentPose('default');
     } finally {
       setIsProcessing(false);
     }
@@ -279,6 +299,7 @@ export const App: React.FC = () => {
   // Start new clean conversation
   const handleNewSession = () => {
     SpeechService.stopSpeaking();
+    setErrorNotice(null);
     const newSessionId = MemoryService.archiveAndStartNewSession(history);
     setSessionId(newSessionId);
     setSessions(MemoryService.getSessionLogs());
@@ -296,6 +317,7 @@ export const App: React.FC = () => {
   // Switch to a previous session from the sidebar
   const handleSelectSession = (selectedId: string) => {
     SpeechService.stopSpeaking();
+    setErrorNotice(null);
     const loaded = MemoryService.loadSession(selectedId);
     if (loaded) {
       setSessionId(selectedId);
@@ -484,6 +506,8 @@ export const App: React.FC = () => {
               <ChatFeedStream
                 messages={history}
                 isProcessing={isProcessing}
+                errorNotice={errorNotice}
+                onDismissError={() => setErrorNotice(null)}
                 onReplayAudio={speak}
                 personaName={persona.name}
               />
@@ -499,7 +523,7 @@ export const App: React.FC = () => {
                   handleSaveVoiceSettings({ ...voiceSettings, enabled: next });
                 }}
                 currentModel={currentModel}
-                onSelectModel={setCurrentModel}
+                onSelectModel={handleSelectModel}
                 disabled={isProcessing}
               />
             </main>
