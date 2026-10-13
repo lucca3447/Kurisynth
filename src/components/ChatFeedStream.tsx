@@ -5,6 +5,7 @@ import {
   Check, 
   Cpu,
   AlertCircle,
+  AlertTriangle,
   X
 } from 'lucide-react';
 import { ChatMessage } from '../types/amadeus';
@@ -15,6 +16,8 @@ interface ChatFeedStreamProps {
   isProcessing: boolean;
   errorNotice?: string | null;
   onDismissError?: () => void;
+  modelNotice?: string | null;
+  onDismissModelNotice?: () => void;
   onReplayAudio: (text: string, emotion?: string) => void;
   personaAvatarUrl?: string;
   personaName: string;
@@ -25,6 +28,8 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
   isProcessing,
   errorNotice,
   onDismissError,
+  modelNotice,
+  onDismissModelNotice,
   onReplayAudio,
   personaAvatarUrl = KURISU_AVATAR_DEFAULT,
   personaName,
@@ -36,7 +41,7 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
   // Auto-scroll to latest message or error
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isProcessing, errorNotice]);
+  }, [messages, isProcessing, errorNotice, modelNotice]);
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard?.writeText(text);
@@ -354,6 +359,23 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
               onClick={onDismissError}
               className="text-[#94a3b8] hover:text-white p-1 rounded"
               title="Fechar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Informative Decommission / Migration Notice Banner */}
+      {modelNotice && (
+        <div className="flex gap-3 max-w-3xl mr-auto items-center p-3 rounded-xl border border-[#f59e0b]/60 bg-[#271d0e]/95 text-xs font-mono text-[#fde68a] shadow-lg animate-fadeIn">
+          <AlertTriangle className="w-4 h-4 text-[#f59e0b] shrink-0" />
+          <div className="flex-1 font-sans">{modelNotice}</div>
+          {onDismissModelNotice && (
+            <button
+              onClick={onDismissModelNotice}
+              className="text-[#fde68a]/70 hover:text-white p-1 rounded transition-colors"
+              title="Fechar aviso de modelo"
             >
               <X className="w-3.5 h-3.5" />
             </button>

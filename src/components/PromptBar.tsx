@@ -8,7 +8,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 
-import { MODEL_OPTIONS } from '../services/aiService';
+import { MODEL_OPTIONS, ModelOption, AIProvider } from '../services/aiService';
 
 interface PromptBarProps {
   onSendMessage: (text: string) => void;
@@ -18,6 +18,8 @@ interface PromptBarProps {
   onToggleVoice: () => void;
   currentModel: string;
   onSelectModel: (model: string) => void;
+  modelOptions?: ModelOption[];
+  currentProvider?: AIProvider;
   disabled?: boolean;
 }
 
@@ -36,6 +38,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
   onToggleVoice,
   currentModel,
   onSelectModel,
+  modelOptions,
+  currentProvider: _currentProvider,
   disabled = false,
 }) => {
   const [input, setInput] = useState('');
@@ -114,15 +118,16 @@ export const PromptBar: React.FC<PromptBarProps> = ({
           <div className="flex items-center justify-between pt-1 border-t border-[#1c202a]">
             {/* Model Selector Pill Dropdown */}
             <div className="flex items-center gap-2">
-              <div className="relative">
+              <div className="relative flex items-center">
                 <select
                   value={currentModel}
                   onChange={(e) => onSelectModel(e.target.value)}
-                  className="appearance-none bg-[#161922] border border-[#2a3040] text-[#e2e8f0] text-[11px] font-mono rounded-lg pl-2.5 pr-6 py-1 focus:outline-none focus:border-[#f59e0b] cursor-pointer"
+                  disabled={disabled}
+                  className="appearance-none bg-[#161922] border border-[#2a3040] text-[#e2e8f0] text-[11px] font-mono rounded-lg pl-2.5 pr-6 py-1 focus:outline-none focus:border-[#f59e0b] cursor-pointer disabled:opacity-50 transition-colors"
                 >
-                  {MODEL_OPTIONS.map((opt) => (
+                  {(modelOptions && modelOptions.length > 0 ? modelOptions : MODEL_OPTIONS).map((opt) => (
                     <option key={opt.id} value={opt.id}>
-                      {opt.label}
+                      {'isDecommissioned' in opt && opt.isDecommissioned ? `⚠️ [Desativado] ${opt.label}` : opt.label}
                     </option>
                   ))}
                 </select>
