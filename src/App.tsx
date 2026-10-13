@@ -26,6 +26,7 @@ import { SubtitleBox } from './components/SubtitleBox';
 import { ControlBar } from './components/ControlBar';
 import { MemoryInspectorModal } from './components/MemoryInspectorModal';
 import { SettingsModal } from './components/SettingsModal';
+import { LegalNoticeModal } from './components/LegalNoticeModal';
 import { IncomingCallScreen } from './components/IncomingCallScreen';
 import { LabBackground } from './components/LabBackground';
 import { AppSidebar } from './components/AppSidebar';
@@ -138,6 +139,7 @@ export const App: React.FC = () => {
   // Modal states
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
 
   // Check Python backend health on mount
   useEffect(() => {
@@ -520,6 +522,7 @@ export const App: React.FC = () => {
         personaName={persona.name}
         onNewCall={handleNewSession}
         backendHealth={backendHealth}
+        onOpenLegal={() => setIsLegalModalOpen(true)}
       />
 
       {/* Microphone problem banner */}
@@ -676,6 +679,12 @@ export const App: React.FC = () => {
         onSaveVoiceSettings={handleSaveVoiceSettings}
         scanlines={scanlines}
         onToggleScanlines={handleToggleScanlines}
+      />
+
+      {/* Legal & Intellectual Property Notice Modal */}
+      <LegalNoticeModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
       />
     </div>
   );

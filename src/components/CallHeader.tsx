@@ -6,7 +6,8 @@ import {
   Menu, 
   Cpu, 
   Database, 
-  RefreshCw 
+  RefreshCw,
+  Scale
 } from 'lucide-react';
 import { AIStatus } from '../services/aiService';
 import { BackendHealth } from '../services/backendService';
@@ -24,6 +25,7 @@ interface CallHeaderProps {
   personaName: string;
   onNewCall?: () => void;
   backendHealth?: BackendHealth | null;
+  onOpenLegal?: () => void;
 }
 
 export const CallHeader: React.FC<CallHeaderProps> = ({
@@ -38,6 +40,7 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
   personaName,
   onNewCall,
   backendHealth,
+  onOpenLegal,
 }) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -81,13 +84,11 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-bold text-[#f59e0b] tracking-wider text-glow-nixie leading-none">
-              AMADEUS
+              OPENAMADEUS
             </span>
-            {isCalling && (
-              <span className="text-[10px] text-[#717d96] font-mono leading-tight mt-0.5">
-                {personaName.toUpperCase()} • {formatTimer(elapsedSeconds)}
-              </span>
-            )}
+            <span className="text-[9px] text-[#717d96] font-mono leading-tight mt-0.5 tracking-tight">
+              COMPANION {isCalling ? `• ${personaName.toUpperCase()} (${formatTimer(elapsedSeconds)})` : '• FAN TRIBUTE'}
+            </span>
           </div>
         </div>
       </div>
@@ -141,6 +142,18 @@ export const CallHeader: React.FC<CallHeaderProps> = ({
           >
             <Tv className="w-3.5 h-3.5" />
             <span className="text-[11px] font-semibold tracking-wider">CRT</span>
+          </button>
+        )}
+
+        {/* Legal Disclaimer & Fan Policy Button */}
+        {onOpenLegal && (
+          <button
+            onClick={onOpenLegal}
+            title="Avisos Legais, Marcas & Termos de Uso de Fã"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161a22] border border-[#2d3546] text-[#94a3b8] hover:text-[#f59e0b] hover:border-[#f59e0b]/50 transition-colors font-mono text-xs"
+          >
+            <Scale className="w-3.5 h-3.5 text-[#f59e0b]" />
+            <span className="text-[11px] font-semibold tracking-wider">LEGAL</span>
           </button>
         )}
 

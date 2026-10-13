@@ -174,7 +174,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <Database className="w-3 h-3 text-[#f59e0b]" />
             <span>{backendHealth ? 'CHROMA + SQLITE' : 'LOCAL STORAGE'}</span>
           </span>
-          <span className="text-[#475569]">AMADEUS OS</span>
+          <span className="text-[#475569]">OPENAMADEUS</span>
         </div>
       </div>
     </aside>

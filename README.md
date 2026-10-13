@@ -1,6 +1,6 @@
-# Amadeus (System Kurisu)
+# OpenAmadeus Companion
 
-A full-stack, multimodal conversational AI application featuring interactive visual novel sprite animations, audio-reactive procedural lip-sync, acoustic waveform visualization, neural voice synthesis (End-to-End Kurisu Qwen3-TTS & Edge-TTS + Kurisu RVC v2), local Retrieval-Augmented Generation (RAG), and multi-provider LLM orchestration.
+A full-stack, modular multimodal conversational AI runtime featuring interactive visual novel sprite animations, audio-reactive procedural lip-sync, acoustic waveform visualization, neural voice synthesis (End-to-End Kurisu Qwen3-TTS & Edge-TTS + Kurisu RVC v2), local Retrieval-Augmented Generation (RAG), and multi-provider LLM orchestration.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -14,9 +14,28 @@ A full-stack, multimodal conversational AI application featuring interactive vis
 
 ---
 
+> ### ⚖️ Legal Disclaimer & Intellectual Property Notice
+> 
+> **Non-Commercial Fan Project:**  
+> **OpenAmadeus Companion** is an independent, non-commercial open-source research and educational tribute project inspired by *Steins;Gate 0*. It is free, non-monetized, and open to the community for exploring human-computer interaction and multimodal conversational agents.
+> 
+> **Trademarks & Copyrights:**  
+> All characters, names, lore, and visual assets related to *STEINS;GATE* (including *Makise Kurisu*, *Amadeus System*, *Viktor Chondria University*, and *Lab 304*) are registered trademarks and copyrighted properties of **MAGES. Inc. / 5pb. / Chiyomaru Studio / KADOKAWA**. This project is not affiliated with, endorsed by, or sponsored by these entities.
+> 
+> **Voice Models & Attribution:**  
+> The community acoustic models (RVC v2 and Qwen3-TTS) are hosted externally on Hugging Face by independent researchers. They represent experimental synthetic voice emulation and are neither officially endorsed by nor affiliated with the official Japanese voice actress **Asami Imai (今井 麻美)**.
+> 
+> **Asset Distribution Policy:**  
+> To respect copyright boundaries, **no commercial game assets or sprite images are bundled or tracked in this Git repository**. The engine functions natively with a stylized procedural holographic silhouette. Users wishing to apply local character sprites do so privately on their own machines (`python scripts/setup_sprites.py`).
+> 
+> **Notice & Takedown:**  
+> If you are a copyright holder and believe any material exceeds fair use or infringes your rights, please open an Issue for prompt resolution or removal.
+
+---
+
 ## 🔬 Overview
 
-**Amadeus** is an advanced conversational AI interface inspired by the fictional Amadeus system from *Steins;Gate 0*. The application recreates the digitalized persona and consciousness of neuroscientist **Makise Kurisu** (Viktor Chondria University - Lab 304) using strict natural language system directives, episodic semantic memory retrieval, and synchronized audiovisual rendering.
+**OpenAmadeus Companion** is an advanced conversational AI interface inspired by the fictional Amadeus system from *Steins;Gate 0*. The application recreates the digitalized persona and consciousness of neuroscientist **Makise Kurisu** (Viktor Chondria University - Lab 304) using strict natural language system directives, episodic semantic memory retrieval, and synchronized audiovisual rendering.
 
  Amadeus integrates:
 - **Universal Voice Engine Architecture**:
@@ -276,9 +295,11 @@ Configure your LLM API keys directly inside the application (**Settings ⚙️**
 
 ```text
 amadeus/
-├── public/                          # Static assets and character sprites
+├── public/                          # Static assets
 │   ├── amadeus-icon.svg             # Application logo
-│   └── assets/sprites/kurisu/       # 174 high-resolution Kurisu visual novel sprites
+│   └── assets/sprites/kurisu/       # Optional local persona sprite destination (gitignored)
+├── scripts/                         # Maintenance and asset setup scripts
+│   └── setup_sprites.py             # Visual pack validation utility
 ├── server/                          # FastAPI Python backend
 │   ├── app/
 │   │   ├── api/v1/endpoints/        # REST routes (/chat, /tts, /memories, /sessions)

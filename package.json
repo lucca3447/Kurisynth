@@ -1,5 +1,6 @@
 {
-  "name": "amadeus-system",
+  "name": "openamadeus-companion",
+  "description": "OpenAmadeus Companion: Real-time multimodal neural companion runtime (open-source fan tribute)",
   "private": true,
   "version": "1.0.0",
   "type": "module",

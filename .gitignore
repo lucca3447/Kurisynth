@@ -30,7 +30,8 @@ dist-ssr/
 .env.*
 !.env.example
 
-# Raw unorganized extraction source (tracked in public/assets/sprites/kurisu)
+# Persona Sprites & Commercial Assets (Pacotes de fã não distribuídos no Git)
+public/assets/sprites/kurisu/
 assets/raw/
 PC _ Computer - Steins;Gate 0 - Characters - Makise Kurisu (Amadeus)/
 
