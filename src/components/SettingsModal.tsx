@@ -16,10 +16,15 @@ import {
   Database,
   Heart,
   Layers,
+  Radio,
+  Wifi,
+  Globe,
+  Activity,
 } from 'lucide-react';
-import { VoiceSettings } from '../types/amadeus';
+import { VoiceSettings, QwenWorkerStatus } from '../types/amadeus';
 import { SpeechService } from '../services/speechService';
 import { AIService } from '../services/aiService';
+import { BackendService } from '../services/backendService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -50,26 +55,55 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [isTestingVoice, setIsTestingVoice] = useState(false);
   const [showRvcAdvanced, setShowRvcAdvanced] = useState(false);
+  const [qwenPingStatus, setQwenPingStatus] = useState<QwenWorkerStatus | null>(null);
+  const [isPinging, setIsPinging] = useState(false);
+  const [availableRvcModels, setAvailableRvcModels] = useState<string[]>(['KurisuRVCv147']);
+
+  const handlePingWorker = async (targetUrl?: string) => {
+    setIsPinging(true);
+    const url = targetUrl !== undefined ? targetUrl : (voiceSettings.qwenMode === 'local' ? 'http://127.0.0.1:8005' : voiceSettings.qwenRemoteUrl);
+    const res = await BackendService.pingQwenWorker(url);
+    setQwenPingStatus(res);
+    setIsPinging(false);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      BackendService.getVoiceModels().then((data) => {
+        if (data?.rvc_models && data.rvc_models.length > 0) {
+          setAvailableRvcModels(data.rvc_models);
+        }
+      });
+      if (voiceSettings.engine === 'qwen3') {
+        handlePingWorker();
+      }
+    }
+  }, [isOpen, voiceSettings.engine, voiceSettings.qwenMode]);
 
   const handleTestVoice = async () => {
     setIsTestingVoice(true);
     const sampleText = voiceSettings.engine === 'qwen3'
       ? 'Não precisa me envergonhar assim... seu idiota!'
-      : voiceSettings.neuralVoice?.startsWith('ja-JP')
-        ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
-        : voiceSettings.useRvc
-          ? 'Olá! Conexão neural RVC estabelecida. Este é o timbre digitalizado de Makise Kurisu!'
-          : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
+      : voiceSettings.engine === 'kokoro'
+        ? 'Olá, este é o motor neural Kokoro ultrarrápido em português!'
+        : voiceSettings.neuralVoice?.startsWith('ja-JP')
+          ? 'こんにちは！アマデウス紅莉栖です。神経接続完了！'
+          : voiceSettings.useRvc
+            ? 'Olá! Conexão neural RVC estabelecida. Este é o timbre digitalizado de Makise Kurisu!'
+            : 'Olá! Conexão Amadeus estabelecida. Teste de voz e sincronia labial em cem por cento!';
     await SpeechService.speak(sampleText, {
       voiceURI: voiceSettings.voiceURI,
       rate: voiceSettings.rate,
       pitch: voiceSettings.pitch,
       volume: voiceSettings.volume,
-      engine: voiceSettings.engine || 'edge_rvc',
+      engine: voiceSettings.engine || 'qwen3',
+      qwenMode: voiceSettings.qwenMode || 'remote',
+      qwenRemoteUrl: voiceSettings.qwenRemoteUrl,
       emotion: 'tsundere',
       useNeural: voiceSettings.useNeural !== false,
       neuralVoice: voiceSettings.neuralVoice || 'pt-BR-FranciscaNeural',
       useRvc: Boolean(voiceSettings.useRvc),
+      rvcModel: voiceSettings.rvcModel || 'KurisuRVCv147',
       rvcPitch: voiceSettings.rvcPitch ?? 0,
       rvcIndexRate: voiceSettings.rvcIndexRate ?? 0.75,
       onEnd: () => setIsTestingVoice(false),
@@ -216,25 +250,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span>CONFIGURAÇÃO DE VOZ (SPEECH SYNTHESIS)</span>
             </div>
 
-            {/* Engine Selection: Qwen3-TTS vs Edge-TTS + RVC */}
+            {/* Engine Selection: Qwen3-TTS vs Kokoro-TTS vs Edge-TTS + RVC */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold text-amadeus-muted block">Motor de Síntese Vocal:</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => onSaveVoiceSettings({ ...voiceSettings, engine: 'qwen3' })}
                   className={`p-2 rounded-lg border text-left transition-all ${
-                    voiceSettings.engine === 'qwen3'
+                    (voiceSettings.engine || 'qwen3') === 'qwen3'
                       ? 'border-amadeus-accent bg-amadeus-accent/15 text-white shadow-sm shadow-amadeus-accent/20'
                       : 'border-amadeus-border bg-amadeus-card/60 text-amadeus-muted hover:border-amadeus-muted'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Kurisu Qwen3-TTS</span>
+                    <span>Kurisu Qwen3</span>
                   </div>
-                  <p className="text-[9px] mt-0.5 text-amadeus-muted">
-                    End-to-End Neural (GPU CUDA | Suspiros & Tsundere)
+                  <p className="text-[9px] mt-0.5 text-amadeus-muted line-clamp-2">
+                    Neural 1.7B (Colab ou GPU | Emoções)
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onSaveVoiceSettings({ ...voiceSettings, engine: 'kokoro' })}
+                  className={`p-2 rounded-lg border text-left transition-all ${
+                    voiceSettings.engine === 'kokoro'
+                      ? 'border-amadeus-accent bg-amadeus-accent/15 text-white shadow-sm shadow-amadeus-accent/20'
+                      : 'border-amadeus-border bg-amadeus-card/60 text-amadeus-muted hover:border-amadeus-muted'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Kokoro-TTS</span>
+                  </div>
+                  <p className="text-[9px] mt-0.5 text-amadeus-muted line-clamp-2">
+                    Motor Leve 82M (100% Offline & ~100ms)
                   </p>
                 </button>
 
@@ -242,7 +294,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="button"
                   onClick={() => onSaveVoiceSettings({ ...voiceSettings, engine: 'edge_rvc' })}
                   className={`p-2 rounded-lg border text-left transition-all ${
-                    voiceSettings.engine !== 'qwen3'
+                    voiceSettings.engine === 'edge_rvc'
                       ? 'border-amadeus-accent bg-amadeus-accent/15 text-white shadow-sm shadow-amadeus-accent/20'
                       : 'border-amadeus-border bg-amadeus-card/60 text-amadeus-muted hover:border-amadeus-muted'
                   }`}
@@ -251,29 +303,201 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <Volume2 className="w-3.5 h-3.5" />
                     <span>Edge-TTS + RVC</span>
                   </div>
-                  <p className="text-[9px] mt-0.5 text-amadeus-muted">
-                    Híbrido Leve (Dicção PT-BR pura + Timbre)
+                  <p className="text-[9px] mt-0.5 text-amadeus-muted line-clamp-2">
+                    Nuvem Gratuita + Timbre RVC
                   </p>
                 </button>
               </div>
             </div>
 
-            {voiceSettings.engine === 'qwen3' ? (
-              <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-2">
+            {/* ENGINE 1: QWEN3-TTS KURISU (REMOTE / LOCAL) */}
+            {(voiceSettings.engine || 'qwen3') === 'qwen3' && (
+              <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
                     <Sparkles className="w-3.5 h-3.5 text-amadeus-accent" />
-                    <span>QWEN3-TTS KURISU (RESIDENT GPU)</span>
+                    <span>KURISU QWEN3-TTS 1.7B (PROSÓDIA & EMOÇÕES)</span>
                   </div>
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-amadeus-accent/10 border border-amadeus-accent/30 text-amadeus-accent">
-                    CUDA BF16 (NVIDIA GPU)
+                    {(voiceSettings.qwenMode || 'remote') === 'remote' ? 'Colab / Cloudflare' : 'Local CUDA BF16'}
+                  </span>
+                </div>
+
+                {/* Sub-mode Toggle: Remote vs Local */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-amadeus-muted block font-medium">Modo de Execução do Modelo:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSaveVoiceSettings({ ...voiceSettings, qwenMode: 'remote' });
+                        handlePingWorker(voiceSettings.qwenRemoteUrl);
+                      }}
+                      className={`h-7 px-2 rounded text-[11px] font-medium border flex items-center justify-center gap-1.5 transition-all ${
+                        (voiceSettings.qwenMode || 'remote') === 'remote'
+                          ? 'border-amadeus-accent bg-amadeus-accent/20 text-white'
+                          : 'border-amadeus-border bg-black/40 text-amadeus-muted hover:text-white'
+                      }`}
+                    >
+                      <Globe className="w-3 h-3 text-amadeus-accent" />
+                      <span>Remoto (Google Colab Pro)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSaveVoiceSettings({ ...voiceSettings, qwenMode: 'local' });
+                        handlePingWorker('http://127.0.0.1:8005');
+                      }}
+                      className={`h-7 px-2 rounded text-[11px] font-medium border flex items-center justify-center gap-1.5 transition-all ${
+                        voiceSettings.qwenMode === 'local'
+                          ? 'border-amadeus-accent bg-amadeus-accent/20 text-white'
+                          : 'border-amadeus-border bg-black/40 text-amadeus-muted hover:text-white'
+                      }`}
+                    >
+                      <Cpu className="w-3 h-3 text-amadeus-accent" />
+                      <span>Local (GPU 8GB+ VRAM)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remote URL Configuration */}
+                {(voiceSettings.qwenMode || 'remote') === 'remote' ? (
+                  <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
+                    <label className="text-[10px] text-amadeus-muted block">
+                      URL Pública do Colab (Cloudflare Tunnel):
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder="https://seu-tunel.trycloudflare.com"
+                        value={voiceSettings.qwenRemoteUrl || ''}
+                        onChange={(e) =>
+                          onSaveVoiceSettings({ ...voiceSettings, qwenRemoteUrl: e.target.value.trim() })
+                        }
+                        className="flex-1 h-8 px-2.5 rounded bg-amadeus-bg border border-amadeus-border text-xs text-white placeholder-amadeus-muted/50 focus:outline-none focus:border-amadeus-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handlePingWorker(voiceSettings.qwenRemoteUrl)}
+                        disabled={isPinging}
+                        className="h-8 px-3 rounded border border-amadeus-accent/50 bg-amadeus-accent/15 hover:bg-amadeus-accent/30 text-amadeus-accent text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isPinging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+                        <span>Testar Ping</span>
+                      </button>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div className="flex items-center justify-between text-[10px] px-2 py-1 rounded bg-black/40 border border-amadeus-border/40">
+                      <span className="text-amadeus-muted">Status do Worker Remoto:</span>
+                      {qwenPingStatus ? (
+                        <div className="flex items-center gap-1.5">
+                          {qwenPingStatus.status === 'ready' ? (
+                            <span className="text-emerald-400 font-medium flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Online • {qwenPingStatus.device || 'GPU'} ({qwenPingStatus.ping_ms}ms)
+                            </span>
+                          ) : qwenPingStatus.status === 'initializing' ? (
+                            <span className="text-amber-400 font-medium flex items-center gap-1">
+                              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                              Carregando Pesos na GPU... ({qwenPingStatus.ping_ms}ms)
+                            </span>
+                          ) : (
+                            <span className="text-rose-400 font-medium">
+                              Offline ({qwenPingStatus.error ? 'Inacessível' : 'Desconectado'})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-amadeus-muted">Não verificado</span>
+                      )}
+                    </div>
+
+                    {/* Pro Plan Colab Guidance */}
+                    <div className="p-2 rounded bg-amadeus-accent/5 border border-amadeus-accent/20 text-[10px] text-amadeus-muted leading-relaxed">
+                      💡 <strong>Dica Google AI Pro:</strong> Você possui o <strong>Colab Pro com 200 compute units/mês</strong>! Execute o notebook <code className="text-amadeus-accent font-mono px-1 py-0.5 bg-black/40 rounded">notebooks/Amadeus_Qwen3_TTS_Colab.ipynb</code> no Colab, copie a URL gerada e cole aqui. Zero consumo de VRAM local e máxima fidelidade!
+                    </div>
+                  </div>
+                ) : (
+                  /* Local Execution Notice */
+                  <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-amadeus-muted">Endpoint Loopback:</span>
+                      <code className="text-white font-mono bg-black/40 px-1.5 py-0.5 rounded">http://127.0.0.1:8005</code>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] px-2 py-1 rounded bg-black/40 border border-amadeus-border/40">
+                      <span className="text-amadeus-muted">Status do Worker Local:</span>
+                      <button
+                        type="button"
+                        onClick={() => handlePingWorker('http://127.0.0.1:8005')}
+                        className="text-amadeus-accent hover:underline flex items-center gap-1 text-[10px]"
+                      >
+                        {isPinging ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : null}
+                        <span>{qwenPingStatus?.status === 'ready' ? '🟢 Online' : '🔴 Offline / Verificar'}</span>
+                      </button>
+                    </div>
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-200/90 leading-relaxed">
+                      ⚠️ <strong>Aviso de Hardware:</strong> O Qwen3-TTS 1.7B consome ~5.4GB de VRAM. Em GPUs com 6GB ou menos (ex: RTX 3050 Laptop), pode causar paginação e lentidão do Windows. Se notar lentidão, use o modo Remoto via Colab Pro!
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ENGINE 2: KOKORO-TTS (LIGHTWEIGHT LOCAL) */}
+            {voiceSettings.engine === 'kokoro' && (
+              <div className="p-3 rounded-lg border border-amadeus-accent/30 bg-amadeus-card/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amadeus-accent">
+                    <Zap className="w-3.5 h-3.5 text-amadeus-accent" />
+                    <span>KOKORO-TTS (MOTOR LOCAL LEVE 82M)</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    100% Offline • ~100ms
                   </span>
                 </div>
                 <p className="text-[10px] text-amadeus-muted leading-relaxed">
-                  Síntese direta ponta a ponta na voz da Kurisu. As entonações, pausas e suspiros tsundere reagem dinamicamente às emoções da tela com acústica de estúdio seco.
+                  Síntese neural ultrarrápida em Português Brasileiro (voz <em>pf_dora</em>). Roda diretamente em CPU ou GPU consumindo apenas ~350MB de memória.
                 </p>
+
+                {/* RVC on Kokoro option */}
+                <div className="pt-2 border-t border-amadeus-border/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-white font-medium block">Aplicar Timbre RVC de Makise Kurisu</span>
+                      <span className="text-[10px] text-amadeus-muted">Converte a voz base Kokoro para o timbre autêntico</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(voiceSettings.useRvc)}
+                      onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, useRvc: e.target.checked })}
+                      className="accent-amadeus-accent w-4 h-4 cursor-pointer"
+                    />
+                  </div>
+
+                  {voiceSettings.useRvc && (
+                    <div className="space-y-2 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-amadeus-muted block">Modelo RVC (.pth):</label>
+                        <select
+                          value={voiceSettings.rvcModel || 'KurisuRVCv147'}
+                          onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, rvcModel: e.target.value })}
+                          className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                        >
+                          {availableRvcModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
+            )}
+
+            {/* ENGINE 3: EDGE-TTS + RVC */}
+            {voiceSettings.engine === 'edge_rvc' && (
               <>
                 {/* Neural vs System Voice selector */}
                 <div className="space-y-3">
@@ -353,7 +577,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {voiceSettings.useRvc && (
                     <div className="space-y-2 pt-1 border-t border-amadeus-border/40">
-                      <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-amadeus-muted block">Modelo RVC (.pth):</label>
+                        <select
+                          value={voiceSettings.rvcModel || 'KurisuRVCv147'}
+                          onChange={(e) => onSaveVoiceSettings({ ...voiceSettings, rvcModel: e.target.value })}
+                          className="w-full h-8 px-2 rounded bg-amadeus-card border border-amadeus-border text-xs text-white focus:outline-none focus:border-amadeus-accent"
+                        >
+                          {availableRvcModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
                         <button
                           type="button"
                           onClick={() => setShowRvcAdvanced((prev) => !prev)}

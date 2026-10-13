@@ -18,12 +18,15 @@ export interface SpeakOptions {
   pitch?: number;
   volume?: number;
   lang?: string;
-  engine?: 'qwen3' | 'edge_rvc';
+  engine?: 'qwen3' | 'kokoro' | 'edge_rvc';
+  qwenMode?: 'remote' | 'local' | 'auto';
+  qwenRemoteUrl?: string;
   emotion?: string;
   instruct?: string;
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
+  rvcModel?: string;
   rvcPitch?: number;
   rvcIndexRate?: number;
   onStart?: () => void;
@@ -354,13 +357,16 @@ export class SpeechService {
         signal: abortCtrl.signal,
         body: JSON.stringify({
           text: cleanText,
-          engine: options.engine || 'edge_rvc',
+          engine: options.engine || 'qwen3',
+          qwenMode: options.qwenMode || 'remote',
+          qwenRemoteUrl: options.qwenRemoteUrl,
           emotion: options.emotion,
           instruct: options.instruct,
           voice,
           rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
           pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
           useRvc: Boolean(options.useRvc),
+          rvcModel: options.rvcModel || 'KurisuRVCv147',
           rvcPitch: options.rvcPitch ?? 0,
           rvcIndexRate: options.rvcIndexRate ?? 0.75,
         }),

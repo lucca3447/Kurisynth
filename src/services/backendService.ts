@@ -1,4 +1,4 @@
-import { ChatMessage, Emotion, MemoryItem, CallSession } from '../types/amadeus';
+import { ChatMessage, Emotion, MemoryItem, CallSession, QwenWorkerStatus, VoiceEngineStatus } from '../types/amadeus';
 
 export const BACKEND_URL =
   ((import.meta as any).env?.VITE_API_URL as string) || 'http://localhost:8000';
@@ -193,6 +193,60 @@ export class BackendService {
       source: 'canonical_fallback',
       timestamp: Date.now() / 1000,
     };
+  }
+
+  /**
+   * Pings Qwen-TTS worker (remote or local) via backend proxy
+   */
+  static async pingQwenWorker(remoteUrl?: string): Promise<QwenWorkerStatus> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/voice/ping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remoteUrl }),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      status: 'offline',
+      mode: remoteUrl ? 'remote' : 'local',
+      error: 'Backend proxy unreachable',
+    };
+  }
+
+  /**
+   * Checks full modular voice engine status
+   */
+  static async getVoiceStatus(remoteUrl?: string): Promise<VoiceEngineStatus | null> {
+    try {
+      const q = remoteUrl ? `?remote_url=${encodeURIComponent(remoteUrl)}` : '';
+      const res = await fetch(`${BACKEND_URL}/api/voice/status${q}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  /**
+   * Discovers available RVC and engine voice models
+   */
+  static async getVoiceModels(): Promise<{ rvc_models: string[]; kokoro_voices: string[]; edge_voices: string[] } | null> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/voice/models`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // ignore
+    }
+    return null;
   }
 }
 
