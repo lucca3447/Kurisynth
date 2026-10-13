@@ -11,6 +11,18 @@ const PREFERRED_MODELS = [
   'gemini-flash-latest',
 ];
 
+/** Sentinel model ID selected in the UI to force the local offline simulator. */
+export const OFFLINE_MODEL_ID = 'offline';
+
+/** Models selectable in the prompt bar. Gemini IDs are tried first when a Gemini key is used. */
+export const MODEL_OPTIONS: { id: string; label: string }[] = [
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { id: OFFLINE_MODEL_ID, label: 'Simulação Offline' },
+];
+
+
 export function isOpenRouterKey(key: string): boolean {
   return key.trim().startsWith('sk-or-');
 }
@@ -410,9 +422,16 @@ export class AIService {
     recalledMemories: MemoryItem[],
     apiKey: string | undefined,
     history: ChatMessage[] = [],
-    sessionId: string | null = null
+    sessionId: string | null = null,
+    selectedModel: string = 'gemini-2.5-flash'
   ): Promise<AIResult> {
     const key = apiKey?.trim();
+
+    // 0. Explicit offline mode: never touches the backend or any cloud provider.
+    if (selectedModel === OFFLINE_MODEL_ID) {
+      const offline = this.queryOfflineSimulator(userMessage, recalledMemories);
+      return { ...offline, status: { kind: 'offline' }, isError: false };
+    }
 
     // 1. Try Python Backend if available
     const backendOnline = await BackendService.checkHealth();
@@ -434,7 +453,7 @@ export class AIService {
 
     // 2. Browser-Mode Fallback: No key -> offline simulator.
     if (!key) {
-      const offline = this.queryOfflineSimulator(userMessage, persona, recalledMemories);
+      const offline = this.queryOfflineSimulator(userMessage, recalledMemories);
       return { ...offline, status: { kind: 'offline' }, isError: false };
     }
 
@@ -468,7 +487,7 @@ export class AIService {
 
     // 5. Browser-Mode: Google Gemini
     try {
-      const { response, emotion, pose, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history);
+      const { response, emotion, pose, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history, selectedModel);
       return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
     } catch (err) {
       console.error('[Amadeus] Gemini call failed:', err);
@@ -717,7 +736,8 @@ export class AIService {
     persona: PersonaProfile,
     recalledMemories: MemoryItem[],
     apiKey: string,
-    history: ChatMessage[]
+    history: ChatMessage[],
+    preferredModel?: string
   ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
 
@@ -731,6 +751,10 @@ export class AIService {
     };
 
     const candidates = await this.getCandidateModels(apiKey);
+    if (preferredModel && candidates.includes(preferredModel)) {
+      candidates.splice(candidates.indexOf(preferredModel), 1);
+      candidates.unshift(preferredModel);
+    }
     let selectedModel = candidates[0];
     let data: any = null;
     let lastError: any = null;
@@ -983,7 +1007,6 @@ export class AIService {
    */
   private static queryOfflineSimulator(
     userMessage: string,
-    persona: PersonaProfile,
     recalledMemories: MemoryItem[]
   ): { response: string; emotion: Emotion; pose?: CharacterPose; learnedMemory?: LearnedMemoryInfo } {
     const text = userMessage.toLowerCase().trim();
