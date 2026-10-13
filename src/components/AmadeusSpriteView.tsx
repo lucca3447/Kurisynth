@@ -64,11 +64,14 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
     }
 
     // High-fidelity audio listener for amplitude and syllable triggers
+    let lastAcousticTimestamp = 0;
+
     const unsubscribe = SpeechService.addLipSyncListener((isOpen, amplitude) => {
       if (!isSpeaking) {
         setMouthState('closed');
         return;
       }
+      lastAcousticTimestamp = Date.now();
 
       if (!isOpen) {
         setMouthState('closed');
@@ -81,14 +84,16 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
       }
     });
 
-    // Fluid secondary lip-flap animator for smooth cadence during speech
+    // Secondary fallback lip-flap animator when no acoustic stream is active (e.g. browser TTS fallback)
     let flapStep = 0;
     lipFlapIntervalRef.current = window.setInterval(() => {
       if (!isSpeaking) return;
-      flapStep = (flapStep + 1) % 4;
-      // Cycle: closed (00) -> half (01) -> open (02) -> half (01)
-      const states: MouthState[] = ['closed', 'half', 'open', 'half'];
-      setMouthState(states[flapStep]);
+      if (Date.now() - lastAcousticTimestamp > 300) {
+        flapStep = (flapStep + 1) % 4;
+        // Cycle: closed (00) -> half (01) -> open (02) -> half (01)
+        const states: MouthState[] = ['closed', 'half', 'open', 'half'];
+        setMouthState(states[flapStep]);
+      }
     }, 120);
 
     return () => {
