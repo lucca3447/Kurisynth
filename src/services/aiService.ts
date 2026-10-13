@@ -14,14 +14,55 @@ const PREFERRED_MODELS = [
 /** Sentinel model ID selected in the UI to force the local offline simulator. */
 export const OFFLINE_MODEL_ID = 'offline';
 
-/** Models selectable in the prompt bar. Gemini IDs are tried first when a Gemini key is used. */
-export const MODEL_OPTIONS: { id: string; label: string }[] = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { id: OFFLINE_MODEL_ID, label: 'Simulação Offline' },
+export type AIProvider = 'offline' | 'groq' | 'openrouter' | 'gemini';
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  provider: AIProvider;
+  isRecommended?: boolean;
+  isDecommissioned?: boolean;
+}
+
+export const OFFLINE_ONLY_OPTION: ModelOption = {
+  id: OFFLINE_MODEL_ID,
+  label: '🖥️ Simulador Local Offline',
+  provider: 'offline',
+  isRecommended: true,
+};
+
+export const OFFLINE_MODEL_OPTION: ModelOption = {
+  id: OFFLINE_MODEL_ID,
+  label: '🖥️ Simulação Offline',
+  provider: 'offline',
+};
+
+export const GROQ_DEFAULT_MODELS: ModelOption[] = [
+  { id: 'llama-3.3-70b-versatile', label: '⚡ Llama 3.3 70B (Versatile)', provider: 'groq', isRecommended: true },
+  { id: 'qwen-2.5-32b', label: '🧠 Qwen 2.5 32B', provider: 'groq' },
+  { id: 'qwen/qwen3.8-27b', label: '🧠 Qwen 3.8 27B', provider: 'groq' },
+  { id: 'openai/gpt-oss-120b', label: '🔬 GPT-OSS 120B', provider: 'groq' },
+  { id: 'llama-3.1-8b-instant', label: '🚀 Llama 3.1 8B (Instant)', provider: 'groq' },
 ];
 
+export const OPENROUTER_DEFAULT_MODELS: ModelOption[] = [
+  { id: 'google/gemma-4-31b-it:free', label: '✨ Gemma 4 31B (Free)', provider: 'openrouter', isRecommended: true },
+  { id: 'liquid/lfm-2.5-2.6b:free', label: '💧 Liquid LFM 2.5 (Free)', provider: 'openrouter' },
+  { id: 'nvidia/nemotron-3.5-lightning:free', label: '⚡ Nemotron 3.5 (Free)', provider: 'openrouter' },
+  { id: 'poolside/laguna-s-2.1:free', label: '🌊 Laguna S 2.1 (Free)', provider: 'openrouter' },
+];
+
+export const GEMINI_DEFAULT_MODELS: ModelOption[] = [
+  { id: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash', provider: 'gemini', isRecommended: true },
+  { id: 'gemini-2.5-flash-lite', label: '💡 Gemini 2.5 Flash Lite', provider: 'gemini' },
+  { id: 'gemini-2.5-pro', label: '🧠 Gemini 2.5 Pro', provider: 'gemini' },
+];
+
+/** Legacy fallback list, mapped to Gemini defaults + offline. */
+export const MODEL_OPTIONS: { id: string; label: string }[] = [
+  ...GEMINI_DEFAULT_MODELS.map((m) => ({ id: m.id, label: m.label })),
+  { id: OFFLINE_MODEL_ID, label: 'Simulação Offline' },
+];
 
 export function isOpenRouterKey(key: string): boolean {
   return key.trim().startsWith('sk-or-');
@@ -29,6 +70,81 @@ export function isOpenRouterKey(key: string): boolean {
 
 export function isGroqKey(key: string): boolean {
   return key.trim().startsWith('gsk_');
+}
+
+export function getProviderFromKey(key?: string | null): AIProvider {
+  if (!key || !key.trim()) return 'offline';
+  const trimmed = key.trim();
+  if (isGroqKey(trimmed)) return 'groq';
+  if (isOpenRouterKey(trimmed)) return 'openrouter';
+  return 'gemini';
+}
+
+/** Formats a raw model ID into an elegant user-facing display label */
+export function formatModelOptionLabel(id: string, provider: AIProvider): string {
+  if (id === OFFLINE_MODEL_ID) {
+    return '🖥️ Simulação Offline';
+  }
+
+  if (provider === 'groq') {
+    if (id.includes('llama-3.3-70b')) return '⚡ Llama 3.3 70B (Versatile)';
+    if (id.includes('llama-3.1-8b')) return '🚀 Llama 3.1 8B (Instant)';
+    if (id.includes('qwen-2.5-32b')) return '🧠 Qwen 2.5 32B';
+    if (id.includes('qwen3.8-27b') || id.includes('qwen')) return '🧠 Qwen (Groq)';
+    if (id.includes('gpt-oss-120b')) return '🔬 GPT-OSS 120B';
+    const clean = id.replace(/^(meta-llama\/|openai\/|qwen\/)/i, '');
+    return `⚡ ${clean}`;
+  }
+
+  if (provider === 'openrouter') {
+    const clean = id.replace(':free', '').replace(/^(google\/|liquid\/|nvidia\/|poolside\/|meta-llama\/|dots-studio\/)/i, '');
+    if (clean.includes('gemma-4')) return `✨ Gemma 4 (${clean}) (Free)`;
+    if (clean.includes('lfm')) return `💧 Liquid LFM (${clean}) (Free)`;
+    if (clean.includes('nemotron')) return `⚡ Nemotron (${clean}) (Free)`;
+    if (clean.includes('laguna')) return `🌊 Laguna (${clean}) (Free)`;
+    return `🌐 ${clean} (Free)`;
+  }
+
+  if (provider === 'gemini') {
+    if (id === 'gemini-2.5-flash') return '⚡ Gemini 2.5 Flash';
+    if (id === 'gemini-2.5-flash-lite') return '💡 Gemini 2.5 Flash Lite';
+    if (id === 'gemini-2.5-pro') return '🧠 Gemini 2.5 Pro';
+    if (id === 'gemini-1.5-flash') return '⚡ Gemini 1.5 Flash';
+    if (id === 'gemini-1.5-pro') return '🧠 Gemini 1.5 Pro';
+    return `✨ ${id}`;
+  }
+
+  return id;
+}
+
+/** Synchronous, non-blocking resolver for model options (Cache + Default Catalogs) */
+export function getModelOptionsForKey(key?: string | null): ModelOption[] {
+  const provider = getProviderFromKey(key);
+  if (provider === 'offline') {
+    return [OFFLINE_ONLY_OPTION];
+  }
+
+  const cacheKey = `amadeus_cached_models_${provider}`;
+  const cachedJson = localStorage.getItem(cacheKey);
+  if (cachedJson) {
+    try {
+      const parsed: ModelOption[] = JSON.parse(cachedJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const withoutOffline = parsed.filter((m) => m.id !== OFFLINE_MODEL_ID);
+        return [...withoutOffline, OFFLINE_MODEL_OPTION];
+      }
+    } catch {
+      // Fallback to default catalog
+    }
+  }
+
+  if (provider === 'groq') {
+    return [...GROQ_DEFAULT_MODELS, OFFLINE_MODEL_OPTION];
+  }
+  if (provider === 'openrouter') {
+    return [...OPENROUTER_DEFAULT_MODELS, OFFLINE_MODEL_OPTION];
+  }
+  return [...GEMINI_DEFAULT_MODELS, OFFLINE_MODEL_OPTION];
 }
 
 const MODEL_CACHE_KEY = 'amadeus_model';
@@ -83,6 +199,8 @@ export interface AIResult {
   isError: boolean;
   learnedMemory?: LearnedMemoryInfo;
   sessionId?: string;
+  fallbackModel?: string;
+  decommissionNotice?: string;
 }
 
 /** Error from the Gemini/Groq/OpenRouter API, carrying the HTTP status (0 = network / empty response). */
@@ -254,6 +372,138 @@ export class AIService {
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
     ];
+  }
+
+  /**
+   * Queries OpenRouter's /api/v1/models endpoint using the user's API key to find
+   * active free conversational models, strictly excluding non-chat models.
+   */
+  static async getCandidateOpenRouterModels(apiKey: string): Promise<string[]> {
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/models', {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'http://localhost:5173',
+          'X-Title': 'Amadeus System',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.data || [])
+          .filter((m: any) => {
+            if (typeof m?.id !== 'string') return false;
+            // Free models only
+            const isFree =
+              m.id.endsWith(':free') ||
+              (m.pricing && m.pricing.prompt === '0' && m.pricing.completion === '0');
+            if (!isFree) return false;
+            // Exclude audio, embeddings, moderation, tts, image/diffusion
+            if (/embed|clip|tts|audio|whisper|flux|diffusion|moderation|guard/i.test(m.id)) return false;
+            return true;
+          })
+          .map((m: any) => m.id as string);
+
+        if (models.length > 0) {
+          const score = (name: string): number => {
+            let s = 0;
+            if (name.includes('gemma-4')) s += 100;
+            else if (name.includes('gemma')) s += 80;
+            if (name.includes('liquid') || name.includes('lfm')) s += 90;
+            if (name.includes('nemotron')) s += 85;
+            if (name.includes('laguna')) s += 75;
+            if (name.includes('qwen')) s += 70;
+            if (name.includes('llama')) s += 60;
+            return s;
+          };
+          models.sort((a: string, b: string) => score(b) - score(a));
+          return models;
+        }
+      }
+    } catch (e) {
+      console.warn('[Amadeus] Could not fetch OpenRouter models list:', e);
+    }
+
+    return [
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'liquid/lfm-2.5-2.6b:free',
+      'poolside/laguna-s-2.1:free',
+      'dots-studio/dots-3-note-preview:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+    ];
+  }
+
+  /**
+   * Background Fetch & Cache updater for live active models from providers.
+   * Runs non-blockingly to keep the selector immune to deprecations without UI lag.
+   */
+  static async fetchLiveModelOptions(apiKey: string): Promise<ModelOption[]> {
+    const key = apiKey.trim();
+    const provider = getProviderFromKey(key);
+    if (provider === 'offline') {
+      return [OFFLINE_ONLY_OPTION];
+    }
+
+    try {
+      if (provider === 'groq') {
+        const live = await this.getCandidateGroqModels(key);
+        if (live.length > 0) {
+          const options: ModelOption[] = live.map((id, index) => ({
+            id,
+            label: formatModelOptionLabel(id, 'groq'),
+            provider: 'groq',
+            isRecommended: index === 0,
+          }));
+          localStorage.setItem('amadeus_cached_models_groq', JSON.stringify(options));
+          return [...options, OFFLINE_MODEL_OPTION];
+        }
+      } else if (provider === 'openrouter') {
+        const live = await this.getCandidateOpenRouterModels(key);
+        if (live.length > 0) {
+          const options: ModelOption[] = live.map((id, index) => ({
+            id,
+            label: formatModelOptionLabel(id, 'openrouter'),
+            provider: 'openrouter',
+            isRecommended: index === 0,
+          }));
+          localStorage.setItem('amadeus_cached_models_openrouter', JSON.stringify(options));
+          return [...options, OFFLINE_MODEL_OPTION];
+        }
+      } else if (provider === 'gemini') {
+        const live = await this.getCandidateModels(key, true);
+        if (live.length > 0) {
+          const options: ModelOption[] = live.slice(0, 8).map((id, index) => ({
+            id,
+            label: formatModelOptionLabel(id, 'gemini'),
+            provider: 'gemini',
+            isRecommended: index === 0,
+          }));
+          localStorage.setItem('amadeus_cached_models_gemini', JSON.stringify(options));
+          return [...options, OFFLINE_MODEL_OPTION];
+        }
+      }
+    } catch (e) {
+      console.warn('[Amadeus] Failed to fetch live models in background:', e);
+    }
+
+    return getModelOptionsForKey(key);
+  }
+
+  /**
+   * Prunes a decommissioned model from local cache to prevent future calls.
+   */
+  static markModelDecommissioned(provider: AIProvider, modelId: string): void {
+    const cacheKey = `amadeus_cached_models_${provider}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const list: ModelOption[] = JSON.parse(cached);
+        const updated = list.filter((m) => m.id !== modelId);
+        localStorage.setItem(cacheKey, JSON.stringify(updated));
+      } catch {}
+    }
   }
 
   /**
@@ -460,8 +710,18 @@ export class AIService {
     // 3. Browser-Mode: Groq Cloud (Ultra-fast LPU)
     if (isGroqKey(key)) {
       try {
-        const { response, emotion, pose, model, learnedMemory } = await this.queryGroq(userMessage, persona, recalledMemories, key, history);
-        return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
+        const { response, emotion, pose, model, learnedMemory, fallbackModel, decommissionNotice } =
+          await this.queryGroq(userMessage, persona, recalledMemories, key, history, selectedModel);
+        return {
+          response,
+          emotion,
+          pose,
+          status: { kind: 'online', model },
+          isError: false,
+          learnedMemory,
+          fallbackModel,
+          decommissionNotice,
+        };
       } catch (err) {
         console.error('[Amadeus] Groq call failed:', err);
         const message = err instanceof GeminiError
@@ -474,8 +734,18 @@ export class AIService {
     // 4. Browser-Mode: OpenRouter
     if (isOpenRouterKey(key)) {
       try {
-        const { response, emotion, pose, model, learnedMemory } = await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history);
-        return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
+        const { response, emotion, pose, model, learnedMemory, fallbackModel, decommissionNotice } =
+          await this.queryOpenRouter(userMessage, persona, recalledMemories, key, history, selectedModel);
+        return {
+          response,
+          emotion,
+          pose,
+          status: { kind: 'online', model },
+          isError: false,
+          learnedMemory,
+          fallbackModel,
+          decommissionNotice,
+        };
       } catch (err) {
         console.error('[Amadeus] OpenRouter call failed:', err);
         const message = err instanceof GeminiError
@@ -487,8 +757,18 @@ export class AIService {
 
     // 5. Browser-Mode: Google Gemini
     try {
-      const { response, emotion, pose, model, learnedMemory } = await this.queryGemini(userMessage, persona, recalledMemories, key, history, selectedModel);
-      return { response, emotion, pose, status: { kind: 'online', model }, isError: false, learnedMemory };
+      const { response, emotion, pose, model, learnedMemory, fallbackModel, decommissionNotice } =
+        await this.queryGemini(userMessage, persona, recalledMemories, key, history, selectedModel);
+      return {
+        response,
+        emotion,
+        pose,
+        status: { kind: 'online', model },
+        isError: false,
+        learnedMemory,
+        fallbackModel,
+        decommissionNotice,
+      };
     } catch (err) {
       console.error('[Amadeus] Gemini call failed:', err);
       const message = err instanceof GeminiError
@@ -526,8 +806,17 @@ export class AIService {
     persona: PersonaProfile,
     recalledMemories: MemoryItem[],
     apiKey: string,
-    history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
+    history: ChatMessage[],
+    preferredModel?: string
+  ): Promise<{
+    response: string;
+    emotion: Emotion;
+    pose?: CharacterPose;
+    model: string;
+    learnedMemory?: LearnedMemoryInfo;
+    fallbackModel?: string;
+    decommissionNotice?: string;
+  }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
     const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
 
@@ -542,12 +831,16 @@ export class AIService {
 
     const liveCandidates = await this.getCandidateGroqModels(apiKey);
     const cachedModel = localStorage.getItem('amadeus_groq_model');
+    const validPreferred = preferredModel && preferredModel !== OFFLINE_MODEL_ID ? preferredModel : null;
+
     const candidates = [
+      ...(validPreferred ? [validPreferred] : []),
       ...(cachedModel && liveCandidates.includes(cachedModel) ? [cachedModel] : []),
       ...liveCandidates,
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastErr: any = null;
+    let decommissionedTarget: string | null = null;
 
     for (const model of candidates) {
       try {
@@ -568,13 +861,25 @@ export class AIService {
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           const msg = errData?.error?.message || res.statusText || 'Erro Groq';
+          const isDecommissioned =
+            res.status === 400 &&
+            /decommissioned|deprecated|not found|model_not_found|does not exist/i.test(msg);
+
+          if (isDecommissioned) {
+            console.warn(`[Amadeus] Groq model ${model} is decommissioned/deprecated: ${msg}`);
+            if (model === validPreferred) {
+              decommissionedTarget = model;
+            }
+            this.markModelDecommissioned('groq', model);
+          }
+
           const isRetryable =
             res.status === 400 ||
             res.status === 404 ||
             res.status === 429 ||
             res.status === 502 ||
             res.status === 503 ||
-            msg.toLowerCase().includes('decommissioned') ||
+            isDecommissioned ||
             msg.toLowerCase().includes('rate_limit') ||
             msg.toLowerCase().includes('rate limit');
 
@@ -596,7 +901,20 @@ export class AIService {
         }
 
         localStorage.setItem('amadeus_groq_model', model);
-        return { ...this.parseResponseTags(cleanContent, userMessage), model: `${model} (Groq LPU)` };
+
+        let decommissionNotice: string | undefined;
+        let fallbackModel: string | undefined;
+        if (decommissionedTarget && model !== decommissionedTarget) {
+          decommissionNotice = `⚠️ O modelo "${decommissionedTarget}" foi descontinuado pelo provedor. Amadeus migrou automaticamente para "${model}".`;
+          fallbackModel = model;
+        }
+
+        return {
+          ...this.parseResponseTags(cleanContent, userMessage),
+          model: `${model} (Groq LPU)`,
+          fallbackModel,
+          decommissionNotice,
+        };
       } catch (err: any) {
         lastErr = err;
         if (err instanceof GeminiError && (err.code === 400 || err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
@@ -613,8 +931,17 @@ export class AIService {
     persona: PersonaProfile,
     recalledMemories: MemoryItem[],
     apiKey: string,
-    history: ChatMessage[]
-  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
+    history: ChatMessage[],
+    preferredModel?: string
+  ): Promise<{
+    response: string;
+    emotion: Emotion;
+    pose?: CharacterPose;
+    model: string;
+    learnedMemory?: LearnedMemoryInfo;
+    fallbackModel?: string;
+    decommissionNotice?: string;
+  }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
     const systemPrompt = `${persona.systemPrompt}${memoryContext}`;
 
@@ -627,23 +954,19 @@ export class AIService {
       { role: 'user', content: userMessage },
     ];
 
+    const liveCandidates = await this.getCandidateOpenRouterModels(apiKey);
     const cachedModel = localStorage.getItem('amadeus_openrouter_model');
-    // If cached model is a nemotron/reasoning model, do not prioritize it
     const validCache = cachedModel && !cachedModel.includes('nemotron') && !cachedModel.includes('super') ? cachedModel : null;
+    const validPreferred = preferredModel && preferredModel !== OFFLINE_MODEL_ID ? preferredModel : null;
 
     const candidates = [
+      ...(validPreferred ? [validPreferred] : []),
       ...(validCache ? [validCache] : []),
-      'google/gemma-4-31b-it:free',
-      'google/gemma-4-26b-a4b-it:free',
-      'liquid/lfm-2.5-2.6b:free',
-      'poolside/laguna-s-2.1:free',
-      'dots-studio/dots-3-note-preview:free',
-      'nvidia/nemotron-3.5-lightning:free',
-      'nvidia/nemotron-3-super-120b-a12b:free',
-      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      ...liveCandidates,
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastErr: any = null;
+    let decommissionedTarget: string | null = null;
 
     for (const model of candidates) {
       try {
@@ -667,11 +990,25 @@ export class AIService {
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           const msg = errData?.error?.message || res.statusText || 'Erro OpenRouter';
+          const isDecommissioned =
+            res.status === 400 &&
+            /decommissioned|deprecated|not found|model_not_found|does not exist/i.test(msg);
+
+          if (isDecommissioned) {
+            console.warn(`[Amadeus] OpenRouter model ${model} is decommissioned/deprecated: ${msg}`);
+            if (model === validPreferred) {
+              decommissionedTarget = model;
+            }
+            this.markModelDecommissioned('openrouter', model);
+          }
+
           const isRetryable =
+            res.status === 400 ||
             res.status === 404 ||
             res.status === 429 ||
             res.status === 502 ||
             res.status === 503 ||
+            isDecommissioned ||
             msg.toLowerCase().includes('unavailable for free') ||
             msg.toLowerCase().includes('rate-limited');
 
@@ -695,10 +1032,23 @@ export class AIService {
 
         localStorage.setItem('amadeus_openrouter_model', model);
         const cleanName = model.replace(':free', '');
-        return { ...this.parseResponseTags(cleanContent, userMessage), model: `${cleanName} (OpenRouter)` };
+
+        let decommissionNotice: string | undefined;
+        let fallbackModel: string | undefined;
+        if (decommissionedTarget && model !== decommissionedTarget) {
+          decommissionNotice = `⚠️ O modelo "${decommissionedTarget}" foi descontinuado pelo OpenRouter. Amadeus migrou automaticamente para "${model}".`;
+          fallbackModel = model;
+        }
+
+        return {
+          ...this.parseResponseTags(cleanContent, userMessage),
+          model: `${cleanName} (OpenRouter)`,
+          fallbackModel,
+          decommissionNotice,
+        };
       } catch (err: any) {
         lastErr = err;
-        if (err instanceof GeminiError && (err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
+        if (err instanceof GeminiError && (err.code === 400 || err.code === 404 || err.code === 429 || err.code === 502 || err.code === 503)) continue;
         throw err;
       }
     }
@@ -738,7 +1088,15 @@ export class AIService {
     apiKey: string,
     history: ChatMessage[],
     preferredModel?: string
-  ): Promise<{ response: string; emotion: Emotion; pose?: CharacterPose; model: string; learnedMemory?: LearnedMemoryInfo }> {
+  ): Promise<{
+    response: string;
+    emotion: Emotion;
+    pose?: CharacterPose;
+    model: string;
+    learnedMemory?: LearnedMemoryInfo;
+    fallbackModel?: string;
+    decommissionNotice?: string;
+  }> {
     const memoryContext = this.formatMemoryContext(recalledMemories);
 
     const body = {
@@ -751,13 +1109,18 @@ export class AIService {
     };
 
     const candidates = await this.getCandidateModels(apiKey);
-    if (preferredModel && candidates.includes(preferredModel)) {
-      candidates.splice(candidates.indexOf(preferredModel), 1);
-      candidates.unshift(preferredModel);
+    const validPreferred = preferredModel && preferredModel !== OFFLINE_MODEL_ID ? preferredModel : null;
+    if (validPreferred && candidates.includes(validPreferred)) {
+      candidates.splice(candidates.indexOf(validPreferred), 1);
+      candidates.unshift(validPreferred);
+    } else if (validPreferred) {
+      candidates.unshift(validPreferred);
     }
+
     let selectedModel = candidates[0];
     let data: any = null;
     let lastError: any = null;
+    let decommissionedTarget: string | null = null;
 
     for (const candidateModel of candidates) {
       try {
@@ -770,7 +1133,19 @@ export class AIService {
         break;
       } catch (err: any) {
         lastError = err;
-        if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404)) {
+        const isDecommissioned =
+          err instanceof GeminiError &&
+          (err.code === 404 || (err.code === 400 && /not found|unsupported|deprecated/i.test(err.apiMessage)));
+
+        if (isDecommissioned) {
+          console.warn(`[Amadeus] Gemini model ${candidateModel} is unsupported or deprecated:`, err.apiMessage);
+          if (candidateModel === validPreferred) {
+            decommissionedTarget = candidateModel;
+          }
+          this.markModelDecommissioned('gemini', candidateModel);
+        }
+
+        if (err instanceof GeminiError && (err.code === 503 || err.code === 429 || err.code === 404 || isDecommissioned)) {
           console.warn(`[Amadeus] Model ${candidateModel} returned ${err.code} (${err.apiMessage}). Trying next candidate...`);
           await new Promise((r) => setTimeout(r, 600));
           continue;
@@ -797,7 +1172,19 @@ export class AIService {
       throw new GeminiError(0, `A IA retornou uma resposta vazia (motivo: ${reason}).`);
     }
 
-    return { ...this.parseResponseTags(text, userMessage), model };
+    let decommissionNotice: string | undefined;
+    let fallbackModel: string | undefined;
+    if (decommissionedTarget && model !== decommissionedTarget) {
+      decommissionNotice = `⚠️ O modelo "${decommissionedTarget}" não está disponível no Gemini. Amadeus migrou automaticamente para "${model}".`;
+      fallbackModel = model;
+    }
+
+    return {
+      ...this.parseResponseTags(text, userMessage),
+      model,
+      fallbackModel,
+      decommissionNotice,
+    };
   }
 
   /**

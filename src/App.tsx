@@ -9,7 +9,14 @@ import {
   MemoryItem
 } from './types/amadeus';
 import { MemoryService } from './services/memoryService';
-import { AIService, AIStatus, MODEL_OPTIONS } from './services/aiService';
+import { 
+  AIService, 
+  AIStatus, 
+  ModelOption, 
+  OFFLINE_MODEL_ID, 
+  getProviderFromKey, 
+  getModelOptionsForKey 
+} from './services/aiService';
 import { BackendService, BackendHealth } from './services/backendService';
 import { SpeechService } from './services/speechService';
 import { CallHeader } from './components/CallHeader';
@@ -48,10 +55,21 @@ export const App: React.FC = () => {
     return saved !== null ? saved === 'true' : true;
   });
 
-  // Active AI Model
+  // Configuration and persistence
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('amadeus_gemini_key') || '');
+  const [aiStatus, setAiStatus] = useState<AIStatus>(() =>
+    localStorage.getItem('amadeus_gemini_key') ? { kind: 'pending' } : { kind: 'offline' }
+  );
+
+  // Active AI Model and dynamic options
+  const currentProvider = getProviderFromKey(apiKey);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>(() => getModelOptionsForKey(apiKey));
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const saved = localStorage.getItem('amadeus_selected_model');
-    return MODEL_OPTIONS.some((m) => m.id === saved) ? (saved as string) : MODEL_OPTIONS[0].id;
+    const initialOptions = getModelOptionsForKey(localStorage.getItem('amadeus_gemini_key') || '');
+    return initialOptions.some((m) => m.id === saved) ? (saved as string) : initialOptions[0].id;
   });
 
   const handleSelectModel = (model: string) => {
@@ -91,11 +109,6 @@ export const App: React.FC = () => {
   const [micError, setMicError] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
 
-  // Configuration and persistence
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('amadeus_gemini_key') || '');
-  const [aiStatus, setAiStatus] = useState<AIStatus>(() =>
-    localStorage.getItem('amadeus_gemini_key') ? { kind: 'pending' } : { kind: 'offline' }
-  );
   const [scanlines, setScanlines] = useState<boolean>(() => {
     const val = localStorage.getItem('amadeus_scanlines');
     return val !== null ? val === 'true' : false; // clean crisp default
@@ -132,6 +145,45 @@ export const App: React.FC = () => {
       setBackendHealth(health);
     });
   }, []);
+
+  // Synchronize model options on apiKey changes, and fetch active models in the background
+  useEffect(() => {
+    const initial = getModelOptionsForKey(apiKey);
+    setModelOptions(initial);
+
+    // If key is empty / offline, lock to offline
+    if (!apiKey.trim()) {
+      setCurrentModel(OFFLINE_MODEL_ID);
+      localStorage.setItem('amadeus_selected_model', OFFLINE_MODEL_ID);
+      return;
+    }
+
+    // Non-blocking background fetch
+    let isMounted = true;
+    AIService.fetchLiveModelOptions(apiKey).then((liveModels) => {
+      if (!isMounted || liveModels.length === 0) return;
+      setModelOptions(liveModels);
+
+      setCurrentModel((prevModel) => {
+        if (prevModel === OFFLINE_MODEL_ID) return prevModel;
+        const exists = liveModels.some((m) => m.id === prevModel);
+        if (!exists) {
+          const fallbackId = liveModels[0]?.id || OFFLINE_MODEL_ID;
+          const fallbackLabel = liveModels[0]?.label || fallbackId;
+          setModelNotice(`⚠️ O modelo anteriormente selecionado não está mais disponível no provedor. Migrado automaticamente para ${fallbackLabel}.`);
+          localStorage.setItem('amadeus_selected_model', fallbackId);
+          return fallbackId;
+        }
+        return prevModel;
+      });
+    }).catch((err) => {
+      console.warn('[Amadeus] Background model fetch notice:', err);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiKey]);
 
   // Keyboard shortcut Ctrl+B for sidebar
   useEffect(() => {
@@ -244,6 +296,15 @@ export const App: React.FC = () => {
         setCurrentPose('crossed_arms');
       } else {
         setCurrentPose('default');
+      }
+
+      // Check if decommissioned model triggered fallback
+      if (result.decommissionNotice) {
+        setModelNotice(result.decommissionNotice);
+      }
+      if (result.fallbackModel && result.fallbackModel !== currentModel) {
+        setCurrentModel(result.fallbackModel);
+        localStorage.setItem('amadeus_selected_model', result.fallbackModel);
       }
 
       if (result.isError) {
@@ -508,6 +569,8 @@ export const App: React.FC = () => {
                 isProcessing={isProcessing}
                 errorNotice={errorNotice}
                 onDismissError={() => setErrorNotice(null)}
+                modelNotice={modelNotice}
+                onDismissModelNotice={() => setModelNotice(null)}
                 onReplayAudio={speak}
                 personaName={persona.name}
               />
@@ -524,6 +587,8 @@ export const App: React.FC = () => {
                 }}
                 currentModel={currentModel}
                 onSelectModel={handleSelectModel}
+                modelOptions={modelOptions}
+                currentProvider={currentProvider}
                 disabled={isProcessing}
               />
             </main>
