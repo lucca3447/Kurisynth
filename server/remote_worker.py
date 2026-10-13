@@ -249,12 +249,13 @@ def start_cloudflare_tunnel(port: int):
         from pycloudflared import try_cloudflare
         print(f"\n[Amadeus Tunnel] Starting Cloudflare Tunnel for port {port}...")
         public_url = try_cloudflare(port=port)
+        tunnel_url = public_url.tunnel if hasattr(public_url, "tunnel") else str(public_url)
         print("\n" + "=" * 65)
         print("  🌟 AMADEUS CLOUDFLARE TUNNEL ATIVO!")
-        print(f"  URL Pública: {public_url}")
+        print(f"  URL Pública: {tunnel_url}")
         print("=" * 65)
         print("  Copie e cole a URL acima em 'Configurações > Voz > URL Remota (Colab)'\n")
-        return public_url
+        return tunnel_url
     except ImportError:
         print("\n[Amadeus Tunnel] 'pycloudflared' não está instalado.")
         print("Para túnel automático, instale com: pip install pycloudflared")
