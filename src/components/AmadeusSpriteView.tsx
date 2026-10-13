@@ -113,12 +113,12 @@ export const AmadeusSpriteView: React.FC<AmadeusSpriteViewProps> = ({
   return (
     <div className={`relative w-full h-full flex items-center justify-center overflow-hidden select-none ${className}`}>
       {/* Character Sprite Container */}
-      <div className="relative z-10 w-full h-full flex items-end justify-center pointer-events-none pb-2">
-        <div className="relative max-h-[95%] flex items-end justify-center transition-transform duration-700 ease-in-out">
+      <div className="relative z-10 w-full h-full flex items-end justify-center pointer-events-none pt-4 pb-1">
+        <div className="relative h-full max-h-full flex items-end justify-center transition-transform duration-700 ease-in-out">
           <img
             src={currentFrameUrl}
             alt="Amadeus Makise Kurisu"
-            className="max-h-[78vh] w-auto object-contain filter drop-shadow-[0_0_30px_rgba(245,158,11,0.22)] transition-opacity duration-150"
+            className="h-full max-h-full w-auto object-contain object-bottom filter drop-shadow-[0_0_30px_rgba(245,158,11,0.22)] transition-opacity duration-150"
             draggable={false}
           />
         </div>

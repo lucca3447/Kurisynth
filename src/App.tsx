@@ -612,6 +612,7 @@ export const App: React.FC = () => {
                 pose={currentPose}
                 isSpeaking={isSpeaking}
                 scanlines={false}
+                className="h-full w-full"
               />
             </div>
 
