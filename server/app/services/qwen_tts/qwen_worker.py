@@ -28,7 +28,7 @@ def _load_model_worker():
     try:
         from qwen_tts import Qwen3TTSModel
         
-        # Check if model was cloned locally into weights or server root
+        # Check if model was cloned locally into weights, server root, or HF hub cache
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
         server_root = os.path.abspath(os.path.join(current_file_dir, "..", "..", ".."))
         local_candidates = [
@@ -36,6 +36,12 @@ def _load_model_worker():
             os.path.join(server_root, "Kurisu_Qwen3_TTS"),
         ]
         
+        # Check local Hugging Face hub cached snapshots
+        hf_cache_dir = os.path.expanduser(r"~/.cache/huggingface/hub/models--starrydark--Kurisu_Qwen3_TTS/snapshots")
+        if os.path.isdir(hf_cache_dir):
+            for snap in sorted(os.listdir(hf_cache_dir), reverse=True):
+                local_candidates.append(os.path.join(hf_cache_dir, snap))
+
         model_source = "starrydark/Kurisu_Qwen3_TTS"
         for candidate in local_candidates:
             if os.path.isdir(candidate) and (
@@ -77,6 +83,9 @@ class SynthesizeRequest(BaseModel):
     text: str
     language: Optional[str] = "Portuguese"
     instruct: Optional[str] = None
+    temperature: Optional[float] = 0.75
+    top_p: Optional[float] = 0.95
+    repetition_penalty: Optional[float] = 1.05
 
 
 @app.get("/health")
@@ -97,7 +106,11 @@ def health_check():
     }
 
 
-def chunk_text_by_sentences(text: str, max_chars: int = 180) -> list[str]:
+def split_into_semantic_blocks(text: str, max_chars: int = 280) -> list[str]:
+    """
+    Splits long monologues (>300 chars) into natural semantic blocks (by paragraph or sentence),
+    preserving conversational phrases intact.
+    """
     raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?\n])\s+', text) if s.strip()]
     if not raw_sentences:
         return [text]
@@ -127,8 +140,13 @@ async def synthesize(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
-    chunks = chunk_text_by_sentences(text, max_chars=180)
-    print(f"[Qwen3 Worker] Synthesizing {len(text)} chars across {len(chunks)} chunk(s)...")
+    # Acoustic Continuity Policy:
+    # Utterances up to 300 characters are synthesized in a SINGLE continuous pass.
+    # This guarantees 100% unified prosody, pitch, cadence and emotion without mid-sentence voice shifts.
+    should_chunk = len(text) > 300 and ("\n" in text or len(re.split(r'[.!?]\s+', text)) > 2)
+    chunks = split_into_semantic_blocks(text, max_chars=280) if should_chunk else [text]
+
+    print(f"[Qwen3 Worker] Synthesizing {len(text)} chars (single_pass={not should_chunk}, chunks={len(chunks)})...")
 
     try:
         audio_pieces = []
@@ -141,13 +159,16 @@ async def synthesize(req: SynthesizeRequest):
                     speaker="kurisu",
                     language=req.language or "Portuguese",
                     instruct=req.instruct or None,
+                    temperature=req.temperature if req.temperature is not None else 0.75,
+                    top_p=req.top_p if req.top_p is not None else 0.95,
+                    repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.05,
                 )
                 audio_pieces.append(wavs[0])
                 sr_used = sr
 
-                # Insert 150ms natural breath pause between sentence chunks
+                # Insert brief natural pause between blocks if segmented
                 if i < len(chunks) - 1:
-                    pause = np.zeros(int(sr * 0.15), dtype=wavs[0].dtype)
+                    pause = np.zeros(int(sr * 0.12), dtype=wavs[0].dtype)
                     audio_pieces.append(pause)
 
         full_audio = np.concatenate(audio_pieces) if len(audio_pieces) > 1 else audio_pieces[0]
@@ -176,4 +197,5 @@ async def synthesize(req: SynthesizeRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    port = int(os.environ.get("QWEN_WORKER_PORT", "8005"))
+    uvicorn.run(app, host="127.0.0.1", port=port)
