@@ -39,8 +39,8 @@ export interface SpeakOptions {
 export function normalizeForSpeech(rawText: string): string {
   let text = rawText || '';
 
-  // 1. Remove emotion and memory tags
-  text = text.replace(/<!--\s*(?:emotion|remember):[^>]*-->/gi, '');
+  // 1. Remove emotion, remember and pose tags
+  text = text.replace(/<!--\s*(?:emotion|remember|pose):[^>]*-->/gi, '');
 
   // 2. Remove stage directions / asterisk actions (*sorri*, *olha para o lado*)
   text = text.replace(/\*[^*]+\*/g, '');
@@ -101,6 +101,7 @@ export class SpeechService {
   private static lipSyncListeners: Set<LipSyncCallback> = new Set();
   private static lipSyncAnimFrame: number | null = null;
   private static simulatedLipSyncTimeout: number | null = null;
+  private static activeAbortController: AbortController | null = null;
 
   static isRecognitionSupported(): boolean {
     return typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -335,32 +336,48 @@ export class SpeechService {
   private static async speakNeural(cleanText: string, options: SpeakOptions): Promise<void> {
     const { ctx, analyser } = this.ensureAudioContext();
 
+    if (this.activeAbortController) {
+      this.activeAbortController.abort();
+    }
+    const abortCtrl = new AbortController();
+    this.activeAbortController = abortCtrl;
+
     const voice = options.neuralVoice || 'pt-BR-FranciscaNeural';
     const rate = options.rate ? `${Math.round((options.rate - 1) * 100)}%` : '+4%';
     const pitch = options.pitch ? `${Math.round((options.pitch - 1) * 20)}Hz` : '+10Hz';
 
-    const res = await fetch(`${BACKEND_URL}/api/tts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: cleanText,
-        engine: options.engine || 'edge_rvc',
-        emotion: options.emotion,
-        instruct: options.instruct,
-        voice,
-        rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
-        pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
-        useRvc: Boolean(options.useRvc),
-        rvcPitch: options.rvcPitch ?? 0,
-        rvcIndexRate: options.rvcIndexRate ?? 0.75,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${BACKEND_URL}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortCtrl.signal,
+        body: JSON.stringify({
+          text: cleanText,
+          engine: options.engine || 'edge_rvc',
+          emotion: options.emotion,
+          instruct: options.instruct,
+          voice,
+          rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
+          pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
+          useRvc: Boolean(options.useRvc),
+          rvcPitch: options.rvcPitch ?? 0,
+          rvcIndexRate: options.rvcIndexRate ?? 0.75,
+        }),
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || abortCtrl.signal.aborted) {
+        return;
+      }
+      throw err;
+    }
 
     if (!res.ok) {
-      throw new Error(`Edge-TTS endpoint returned ${res.status}`);
+      throw new Error(`TTS endpoint returned ${res.status}`);
     }
 
     const blob = await res.blob();
+    if (abortCtrl.signal.aborted) return;
     const audioUrl = URL.createObjectURL(blob);
 
     if (!this.neuralAudio) {
@@ -406,7 +423,10 @@ export class SpeechService {
         reject(e);
       };
 
-      audio.play().catch(reject);
+      audio.play().catch((err) => {
+        URL.revokeObjectURL(audioUrl);
+        reject(err);
+      });
     });
   }
 
@@ -470,6 +490,11 @@ export class SpeechService {
    * Stops any ongoing speech synthesis (neural or browser)
    */
   static stopSpeaking(): void {
+    if (this.activeAbortController) {
+      this.activeAbortController.abort();
+      this.activeAbortController = null;
+    }
+
     this.isSpeakingAudio = false;
     this.notifyLipSync(false, 0);
 

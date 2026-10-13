@@ -32,23 +32,30 @@ def test_tts_request_qwen_fields():
 def test_acoustic_instruction_mapper():
     # Test tsundere emotion mapping
     instruct_tsundere = resolve_acoustic_instruct("tsundere")
-    assert "Gravação de estúdio cristalina" in instruct_tsundere
-    assert "close-mic" in instruct_tsundere
+    assert "som seco e direto sem eco" in instruct_tsundere
+    assert "Tom tsundere" in instruct_tsundere
     assert EMOTION_INSTRUCT_MAP["tsundere"] == instruct_tsundere
 
     # Test unknown emotion fallback
     instruct_default = resolve_acoustic_instruct("unknown_emotion")
-    assert "Gravação de estúdio cristalina" in instruct_default
+    assert "som seco e direto sem eco" in instruct_default
     assert EMOTION_INSTRUCT_MAP["neutral"] == instruct_default
 
     # Test custom instruct override
     custom = "Sussurrando bem perto do microfone."
     instruct_custom = resolve_acoustic_instruct(custom_instruct=custom)
     assert custom in instruct_custom
-    assert "Gravação de estúdio cristalina" in instruct_custom
+    assert "som seco e direto sem eco" in instruct_custom
 
 
 def test_python_executable_discovery():
     py_exe = QwenTTSManager.get_python_executable()
     assert py_exe is not None
     assert Path(py_exe).exists()
+
+
+if __name__ == "__main__":
+    test_tts_request_qwen_fields()
+    test_acoustic_instruction_mapper()
+    test_python_executable_discovery()
+    print("[OK] All unit tests in test_qwen_tts.py passed successfully!")
