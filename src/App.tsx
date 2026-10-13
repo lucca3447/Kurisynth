@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CharacterPose, ChatMessage, Emotion, PersonaProfile, VoiceSettings } from './types/amadeus';
+import { 
+  CharacterPose, 
+  ChatMessage, 
+  Emotion, 
+  PersonaProfile, 
+  VoiceSettings,
+  CallSession,
+  MemoryItem
+} from './types/amadeus';
 import { MemoryService } from './services/memoryService';
-import { AIService, AIStatus } from './services/aiService';
+import { AIService, AIStatus, MODEL_OPTIONS } from './services/aiService';
 import { BackendService, BackendHealth } from './services/backendService';
 import { SpeechService } from './services/speechService';
 import { CallHeader } from './components/CallHeader';
@@ -12,6 +20,11 @@ import { ControlBar } from './components/ControlBar';
 import { MemoryInspectorModal } from './components/MemoryInspectorModal';
 import { SettingsModal } from './components/SettingsModal';
 import { IncomingCallScreen } from './components/IncomingCallScreen';
+import { LabBackground } from './components/LabBackground';
+import { AppSidebar } from './components/AppSidebar';
+import { ChatFeedStream } from './components/ChatFeedStream';
+import { CompanionPanel } from './components/CompanionPanel';
+import { PromptBar } from './components/PromptBar';
 import { Phone, MicOff, X, Sparkles } from 'lucide-react';
 
 const INITIAL_GREETING =
@@ -23,12 +36,36 @@ export const App: React.FC = () => {
   // Call state: 'incoming' | 'connected' | 'disconnected'
   const [callState, setCallState] = useState<'incoming' | 'connected' | 'disconnected'>('incoming');
 
+  // Hybrid View Mode: 'terminal' (modern AI chat) | 'call' (visual novel call)
+  const [viewMode, setViewMode] = useState<'terminal' | 'call'>(() => {
+    const saved = localStorage.getItem('amadeus_view_mode');
+    return saved === 'call' ? 'call' : 'terminal';
+  });
+
+  // Sidebar toggle state
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    const saved = localStorage.getItem('amadeus_sidebar_open');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  // Active AI Model
+  const [currentModel, setCurrentModel] = useState<string>(() => {
+    const saved = localStorage.getItem('amadeus_selected_model');
+    return MODEL_OPTIONS.some((m) => m.id === saved) ? (saved as string) : MODEL_OPTIONS[0].id;
+  });
+
+  const handleSelectModel = (model: string) => {
+    setCurrentModel(model);
+    localStorage.setItem('amadeus_selected_model', model);
+  };
+
   // Persona and cognitive state
   const [persona, setPersona] = useState<PersonaProfile>(() => MemoryService.getPersona('kurisu'));
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
   const [currentPose, setCurrentPose] = useState<CharacterPose>('default');
   const [recalledMemoryIds, setRecalledMemoryIds] = useState<string[]>([]);
   const [learnedNotification, setLearnedNotification] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   // Active Session & History
   const [sessionId, setSessionId] = useState<string>(() => MemoryService.getActiveSession().sessionId);
@@ -36,6 +73,7 @@ export const App: React.FC = () => {
     const active = MemoryService.getActiveSession();
     return active.messages.length > 0 ? active.messages : [];
   });
+  const [sessions, setSessions] = useState<CallSession[]>(() => MemoryService.getSessionLogs());
 
   // Dialogue and speech state
   const [currentSubtitle, setCurrentSubtitle] = useState<string>(() => {
@@ -60,7 +98,7 @@ export const App: React.FC = () => {
   );
   const [scanlines, setScanlines] = useState<boolean>(() => {
     const val = localStorage.getItem('amadeus_scanlines');
-    return val !== null ? val === 'true' : true;
+    return val !== null ? val === 'true' : false; // clean crisp default
   });
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
     const val = localStorage.getItem('amadeus_voice_settings');
@@ -95,6 +133,35 @@ export const App: React.FC = () => {
     });
   }, []);
 
+  // Keyboard shortcut Ctrl+B for sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => {
+          const next = !prev;
+          localStorage.setItem('amadeus_sidebar_open', String(next));
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSwitchViewMode = (mode: 'terminal' | 'call') => {
+    setViewMode(mode);
+    localStorage.setItem('amadeus_view_mode', mode);
+  };
+
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('amadeus_sidebar_open', String(next));
+      return next;
+    });
+  };
+
   // Save settings
   const handleSaveApiKey = (key: string) => {
     const trimmed = key.trim();
@@ -109,9 +176,12 @@ export const App: React.FC = () => {
     localStorage.setItem('amadeus_voice_settings', JSON.stringify(settings));
   };
 
-  const handleToggleScanlines = (enabled: boolean) => {
-    setScanlines(enabled);
-    localStorage.setItem('amadeus_scanlines', String(enabled));
+  const handleToggleScanlines = () => {
+    setScanlines((prev) => {
+      const next = !prev;
+      localStorage.setItem('amadeus_scanlines', String(next));
+      return next;
+    });
   };
 
   const speak = (text: string, emotion?: string) => {
@@ -133,21 +203,37 @@ export const App: React.FC = () => {
     });
   };
 
-  // Send message to Amadeus
-  const handleSendMessage = async (userMessage: string) => {
-    if (!userMessage.trim() || isProcessing) return;
+  // Process user input
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || isProcessing) return;
 
     // 1. Retrieve active memories from cognitive cortex (Local RAG)
-    const matched = MemoryService.matchMemories(userMessage, persona);
-    setRecalledMemoryIds(matched.map((m) => m.id));
+    const matched = MemoryService.matchMemories(text, persona);
+    setRecalledMemoryIds(matched.map((m: MemoryItem) => m.id));
 
-    setIsProcessing(true);
     SpeechService.stopSpeaking();
     setIsSpeaking(false);
+    setLearnedNotification(null);
+
+    const userMessage: ChatMessage = {
+      id: newId(),
+      sender: 'user',
+      content: text.trim(),
+      timestamp: Date.now(),
+    };
+
+    const nextHistory = [...history, userMessage];
+    setHistory(nextHistory);
+    MemoryService.saveActiveSession(sessionId, nextHistory);
+    setErrorNotice(null);
+    setIsProcessing(true);
+    // Immediate visual feedback while the model is working
+    setCurrentEmotion('thinking');
+    setCurrentPose('crossed_arms');
 
     try {
       // 2. Query Amadeus (via Python backend with ChromaDB if available, or direct browser-side)
-      const result = await AIService.queryAmadeus(userMessage, persona, matched, apiKey, history, sessionId);
+      const result = await AIService.queryAmadeus(text, persona, matched, apiKey, nextHistory, sessionId, currentModel);
 
       setAiStatus(result.status);
       setCurrentSubtitle(result.response);
@@ -161,12 +247,15 @@ export const App: React.FC = () => {
       }
 
       if (result.isError) {
+        // Visible in terminal mode too; intentionally not stored in the session history.
+        setErrorNotice(result.response);
+        setCurrentEmotion('worried');
+        setCurrentPose('default');
         return;
       }
 
       // Check if memory was learned
       if (result.learnedMemory) {
-        // Save to browser store as well for offline sync
         MemoryService.addMemory(persona.id, {
           category: 'user',
           title: result.learnedMemory.title,
@@ -175,54 +264,79 @@ export const App: React.FC = () => {
           emotionalWeight: result.learnedMemory.emotionalWeight || 'Factual',
           source: 'learned',
         });
+        setLearnedNotification(`Nova memória gravada: "${result.learnedMemory.title}"`);
         setPersona(MemoryService.getPersona(persona.id));
-
-        // Show HUD toast notification
-        setLearnedNotification(`CÓRTEX: Memorizado "${result.learnedMemory.title}"`);
-        setTimeout(() => setLearnedNotification(null), 5000);
       }
 
-      const assignedPose: CharacterPose = result.pose || (result.emotion === 'thinking' ? 'crossed_arms' : 'default');
+      const aiMessage: ChatMessage = {
+        id: newId(),
+        sender: 'amadeus',
+        content: result.response,
+        timestamp: Date.now(),
+        emotion: result.emotion,
+        pose: result.pose,
+        recalledMemories: matched.map((m: MemoryItem) => m.id),
+      };
 
-      const updatedHistory: ChatMessage[] = [
-        ...history,
-        { id: newId(), sender: 'user', content: userMessage, timestamp: Date.now() },
-        {
-          id: newId(),
-          sender: 'amadeus',
-          content: result.response,
-          timestamp: Date.now(),
-          emotion: result.emotion,
-          pose: assignedPose,
-          recalledMemories: matched.map((m) => m.id),
-        },
-      ];
-
+      const updatedHistory = [...nextHistory, aiMessage];
       setHistory(updatedHistory);
       MemoryService.saveActiveSession(sessionId, updatedHistory);
 
       // 3. Speak response with TTS if enabled
       speak(result.response, result.emotion);
+    } catch (err: any) {
+      console.error('Failed to query Amadeus:', err);
+      const message = '[ERRO DE CONEXÃO COM O AMADEUS]';
+      setCurrentSubtitle(message);
+      setErrorNotice(message);
+      setCurrentEmotion('worried');
+      setCurrentPose('default');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Start new clean call
-  const handleNewCall = () => {
-    if (confirm('Deseja iniciar uma nova chamada com a Kurisu? O histórico atual será arquivado e as memórias aprendidas permanecerão salvas no Córtex.')) {
-      SpeechService.stopSpeaking();
-      const newSessionId = MemoryService.archiveAndStartNewSession(history);
-      setSessionId(newSessionId);
+  // Start new clean conversation
+  const handleNewSession = () => {
+    SpeechService.stopSpeaking();
+    setErrorNotice(null);
+    const newSessionId = MemoryService.archiveAndStartNewSession(history);
+    setSessionId(newSessionId);
+    setSessions(MemoryService.getSessionLogs());
 
-      const initialMsgs: ChatMessage[] = [
-        { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'neutral', pose: 'default' },
-      ];
-      setHistory(initialMsgs);
-      setCurrentSubtitle(INITIAL_GREETING);
-      setCurrentEmotion('neutral');
-      setCurrentPose('default');
-      MemoryService.saveActiveSession(newSessionId, initialMsgs);
+    const initialMsgs: ChatMessage[] = [
+      { id: newId(), sender: 'amadeus', content: INITIAL_GREETING, timestamp: Date.now(), emotion: 'neutral', pose: 'default' },
+    ];
+    setHistory(initialMsgs);
+    setCurrentSubtitle(INITIAL_GREETING);
+    setCurrentEmotion('neutral');
+    setCurrentPose('default');
+    MemoryService.saveActiveSession(newSessionId, initialMsgs);
+  };
+
+  // Switch to a previous session from the sidebar
+  const handleSelectSession = (selectedId: string) => {
+    SpeechService.stopSpeaking();
+    setErrorNotice(null);
+    const loaded = MemoryService.loadSession(selectedId);
+    if (loaded) {
+      setSessionId(selectedId);
+      setHistory(loaded);
+      const lastAi = [...loaded].reverse().find((m) => m.sender === 'amadeus');
+      if (lastAi) {
+        setCurrentSubtitle(lastAi.content);
+        setCurrentEmotion(lastAi.emotion || 'neutral');
+        setCurrentPose(lastAi.pose || 'default');
+      }
+    }
+  };
+
+  // Delete session
+  const handleDeleteSession = (delId: string) => {
+    MemoryService.deleteSession(delId);
+    setSessions(MemoryService.getSessionLogs());
+    if (sessionId === delId) {
+      handleNewSession();
     }
   };
 
@@ -302,102 +416,179 @@ export const App: React.FC = () => {
   // Render Disconnected Screen
   if (callState === 'disconnected') {
     return (
-      <div className="relative w-full h-screen flex flex-col items-center justify-center p-6 bg-[#060a08] font-mono text-center select-none">
-        <div className="p-8 rounded-xl border border-amadeus-border bg-amadeus-panel/80 max-w-md w-full space-y-5 shadow-[0_0_30px_rgba(0,0,0,0.8)]">
-          <div className="text-amadeus-red font-bold text-lg tracking-widest text-glow-red">
+      <div className="relative w-full h-screen flex flex-col items-center justify-center p-6 bg-[#0c0e12] font-mono text-center select-none">
+        <LabBackground scanlines={scanlines} />
+        <div className="p-8 rounded-2xl border border-[#262c3a] bg-[#12151c]/95 max-w-md w-full space-y-5 shadow-[0_0_35px_rgba(0,0,0,0.8)] box-glow-nixie z-10">
+          <div className="w-12 h-12 rounded-full border border-[#ef4444]/60 bg-[#260c0c] text-[#ef4444] mx-auto flex items-center justify-center">
+            <Phone className="w-6 h-6 rotate-[135deg]" />
+          </div>
+          <div className="text-[#ef4444] font-bold text-lg tracking-widest text-glow-red">
             CHAMADA ENCERRADA
           </div>
-          <div className="text-xs text-amadeus-muted">
-            A conexão com o servidor Amadeus na Viktor Chondria University foi finalizada.
+          <div className="text-xs text-[#94a3b8] font-sans">
+            A conexão com a unidade Amadeus Makise Kurisu foi finalizada. O histórico da conversa foi arquivado com segurança no laboratório.
           </div>
           <button
             onClick={handleRestartCall}
-            className="w-full py-3 rounded-lg bg-amadeus-accent/20 border border-amadeus-accent text-amadeus-accent font-bold text-sm hover:bg-amadeus-accent hover:text-black transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-xl bg-[#f59e0b]/20 border border-[#f59e0b] text-[#fbbf24] font-bold text-xs hover:bg-[#f59e0b] hover:text-black transition-all flex items-center justify-center gap-2 box-glow-nixie"
           >
             <Phone className="w-4 h-4" />
             <span>LIGAR NOVAMENTE PARA O AMADEUS</span>
           </button>
         </div>
-        {scanlines && <div className="absolute inset-0 crt-scanlines pointer-events-none" />}
       </div>
     );
   }
 
-  // Render Active Call Screen
+  // Render Connected Workspace (Hybrid: Terminal Mode OR Call Mode)
   return (
-    <div className="relative w-full h-screen flex flex-col justify-between bg-[#060a08] overflow-hidden select-none font-mono">
-      {/* Top Header */}
+    <div className="relative w-full h-screen flex flex-col justify-between bg-[#0c0e12] overflow-hidden select-none font-mono">
+      {/* Background Grid & Binary Texture */}
+      <LabBackground scanlines={scanlines} />
+
+      {/* Top Header Bar */}
       <CallHeader
+        viewMode={viewMode}
+        onSwitchViewMode={handleSwitchViewMode}
+        scanlines={scanlines}
+        onToggleScanlines={handleToggleScanlines}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={handleToggleSidebar}
         isCalling={true}
         aiStatus={aiStatus}
         personaName={persona.name}
-        onNewCall={handleNewCall}
+        onNewCall={handleNewSession}
         backendHealth={backendHealth}
       />
 
-      {/* Center Character Stage */}
-      <div className="relative flex-1 w-full min-h-0 overflow-hidden flex items-center justify-center">
-        {/* Visual Novel Character Sprite with Blinking & Lip Sync */}
-        <AmadeusSpriteView
-          emotion={currentEmotion}
-          pose={currentPose}
-          isSpeaking={isSpeaking}
-          scanlines={scanlines}
-        />
-
-        {/* Floating Audio Oscilloscope (Steins;Gate Frequency Monitor) */}
-        <div className="absolute bottom-4 right-4 w-72 md:w-80 z-20 hidden sm:block shadow-lg">
-          <AudioOscilloscope
-            isActive={isSpeaking}
-            isListening={isListening}
-          />
-        </div>
-
-        {/* Real-Time Learning HUD Toast Notification */}
-        {learnedNotification && (
-          <div className="absolute top-4 z-40 px-4 py-2 rounded-lg bg-purple-950/90 border border-purple-500 text-purple-200 text-xs shadow-[0_0_20px_rgba(168,85,247,0.4)] flex items-center gap-2 animate-bounce">
-            <Sparkles className="w-4 h-4 text-purple-300" />
-            <span className="font-bold">{learnedNotification}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Interface: Subtitles & Control Bar */}
-      <div className="w-full bg-gradient-to-t from-[#040705] via-[#070c09]/95 to-transparent px-4 pb-2 z-30">
-        {/* Microphone problem banner */}
-        {micError && (
-          <div className="w-full max-w-4xl mx-auto mb-2 flex items-start gap-2 p-2.5 rounded-lg border border-amadeus-amber/50 bg-amadeus-amber/10 text-amadeus-amber text-xs font-sans">
+      {/* Microphone problem banner */}
+      {micError && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="flex items-start gap-2 p-2.5 rounded-lg border border-[#f59e0b]/50 bg-[#261505]/95 text-[#fbbf24] text-xs font-sans shadow-lg">
             <MicOff className="w-4 h-4 shrink-0 mt-0.5" />
             <span className="flex-1">{micError}</span>
             <button onClick={() => setMicError(null)} className="shrink-0 hover:text-white" title="Fechar aviso">
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Real-Time Learning Toast */}
+      {learnedNotification && (
+        <div className="absolute top-16 right-6 z-50 px-4 py-2 rounded-xl bg-[#1b152b] border border-[#a855f7] text-[#e9d5ff] text-xs shadow-[0_0_20px_rgba(168,85,247,0.4)] flex items-center gap-2 animate-bounce font-mono">
+          <Sparkles className="w-4 h-4 text-[#c084fc]" />
+          <span className="font-bold">{learnedNotification}</span>
+        </div>
+      )}
+
+      {/* ================= MAIN CONTENT AREA ================= */}
+      <div className="flex-1 flex overflow-hidden relative z-10">
+        {viewMode === 'terminal' ? (
+          /* ================= VIEW 1: TERMINAL & CHAT MODE (Split-View) ================= */
+          <>
+            {/* Left Collapsible Sidebar */}
+            <AppSidebar
+              isOpen={isSidebarOpen}
+              onClose={() => setIsSidebarOpen(false)}
+              sessions={sessions}
+              activeSessionId={sessionId}
+              onSelectSession={handleSelectSession}
+              onNewSession={handleNewSession}
+              onDeleteSession={handleDeleteSession}
+              onOpenMemory={() => setIsMemoryModalOpen(true)}
+              onOpenSettings={() => setIsSettingsModalOpen(true)}
+              backendHealth={backendHealth}
+            />
+
+            {/* Central Chat Feed & Prompt Bar */}
+            <main className="flex-1 flex flex-col justify-between overflow-hidden relative">
+              <ChatFeedStream
+                messages={history}
+                isProcessing={isProcessing}
+                errorNotice={errorNotice}
+                onDismissError={() => setErrorNotice(null)}
+                onReplayAudio={speak}
+                personaName={persona.name}
+              />
+
+              <PromptBar
+                onSendMessage={handleSendMessage}
+                isListening={isListening}
+                onToggleMic={handleToggleMic}
+                voiceEnabled={voiceSettings.enabled}
+                onToggleVoice={() => {
+                  const next = !voiceSettings.enabled;
+                  if (!next) SpeechService.stopSpeaking();
+                  handleSaveVoiceSettings({ ...voiceSettings, enabled: next });
+                }}
+                currentModel={currentModel}
+                onSelectModel={handleSelectModel}
+                disabled={isProcessing}
+              />
+            </main>
+
+            {/* Right Companion Panel: Kurisu Live Stage */}
+            <CompanionPanel
+              emotion={currentEmotion}
+              pose={currentPose}
+              isSpeaking={isSpeaking}
+              isListening={isListening}
+              personaName={persona.name}
+            />
+          </>
+        ) : (
+          /* ================= VIEW 2: VISUAL NOVEL CALL MODE (Cinematic Fullscreen) ================= */
+          <main className="flex-1 flex flex-col justify-between items-center relative overflow-hidden">
+            {/* Center Character Stage */}
+            <div className="relative flex-1 w-full min-h-0 overflow-hidden flex items-center justify-center">
+              <AmadeusSpriteView
+                emotion={currentEmotion}
+                pose={currentPose}
+                isSpeaking={isSpeaking}
+                scanlines={false}
+              />
+            </div>
+
+            {/* Bottom Section: Voice Oscilloscope, Subtitles & Control Bar */}
+            <div className="w-full bg-gradient-to-t from-[#08090d] via-[#0c0e12]/95 to-transparent px-4 pb-2 z-20 space-y-2">
+              {/* Atmospheric Voice Oscilloscope prominently above subtitles in Call Mode */}
+              <div className="w-full max-w-4xl mx-auto">
+                <AudioOscilloscope
+                  isActive={isSpeaking}
+                  isListening={isListening}
+                  className="h-12 w-full"
+                />
+              </div>
+
+              {/* Subtitle Dialogue Box */}
+              <SubtitleBox
+                speakerName={persona.name}
+                text={currentSubtitle}
+                emotion={currentEmotion}
+                isProcessing={isProcessing}
+                onTopicClick={handleSendMessage}
+              />
+
+              {/* 100% Iconic Call Control Bar */}
+              <ControlBar
+                onSendMessage={handleSendMessage}
+                isListening={isListening}
+                onToggleMic={handleToggleMic}
+                voiceEnabled={voiceSettings.enabled}
+                onToggleVoice={() => {
+                  const next = !voiceSettings.enabled;
+                  if (!next) SpeechService.stopSpeaking();
+                  handleSaveVoiceSettings({ ...voiceSettings, enabled: next });
+                }}
+                onOpenMemory={() => setIsMemoryModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onEndCall={handleEndCall}
+                disabled={isProcessing}
+              />
+            </div>
+          </main>
         )}
-
-        <SubtitleBox
-          speakerName={persona.name}
-          text={currentSubtitle}
-          emotion={currentEmotion}
-          isProcessing={isProcessing}
-          onTopicClick={handleSendMessage}
-        />
-
-        <ControlBar
-          onSendMessage={handleSendMessage}
-          isListening={isListening}
-          onToggleMic={handleToggleMic}
-          voiceEnabled={voiceSettings.enabled}
-          onToggleVoice={() => {
-            const next = !voiceSettings.enabled;
-            if (!next) SpeechService.stopSpeaking();
-            handleSaveVoiceSettings({ ...voiceSettings, enabled: next });
-          }}
-          onOpenMemory={() => setIsMemoryModalOpen(true)}
-          onOpenSettings={() => setIsSettingsModalOpen(true)}
-          onEndCall={handleEndCall}
-          disabled={isProcessing}
-        />
       </div>
 
       {/* Memory Cortex Inspector Modal */}

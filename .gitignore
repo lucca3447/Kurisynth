@@ -53,3 +53,4 @@ venv/
 teste*.py
 *.wav
 server/*.wav
+CONTEXT.md

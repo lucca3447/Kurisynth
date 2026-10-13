@@ -344,7 +344,7 @@ export class SpeechService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: cleanText,
-        engine: options.engine || (options.useRvc ? 'edge_rvc' : 'edge_rvc'),
+        engine: options.engine || 'edge_rvc',
         emotion: options.emotion,
         instruct: options.instruct,
         voice,
