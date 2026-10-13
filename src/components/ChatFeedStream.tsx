@@ -3,15 +3,18 @@ import {
   Volume2, 
   Copy, 
   Check, 
-  Sparkles,
   Cpu,
-  Brain
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { ChatMessage } from '../types/amadeus';
+import { KURISU_AVATAR_DEFAULT } from '../services/spriteCatalog';
 
 interface ChatFeedStreamProps {
   messages: ChatMessage[];
   isProcessing: boolean;
+  errorNotice?: string | null;
+  onDismissError?: () => void;
   onReplayAudio: (text: string, emotion?: string) => void;
   personaAvatarUrl?: string;
   personaName: string;
@@ -20,22 +23,31 @@ interface ChatFeedStreamProps {
 export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
   messages,
   isProcessing,
+  errorNotice,
+  onDismissError,
   onReplayAudio,
-  personaAvatarUrl = '/assets/sprites/kurisu/CRS_JLD_A01_00.png',
+  personaAvatarUrl = KURISU_AVATAR_DEFAULT,
   personaName,
 }) => {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
-  // Auto-scroll to latest message
+  // Auto-scroll to latest message or error
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isProcessing]);
+  }, [messages, isProcessing, errorNotice]);
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard?.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCopyCode = (codeKey: string, codeText: string) => {
+    navigator.clipboard?.writeText(codeText);
+    setCopiedCodeId(codeKey);
+    setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
   const formatTime = (timestamp?: number) => {
@@ -44,9 +56,119 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
-  // Helper to render simple markdown: code blocks, tables, bold, italic
-  const renderFormattedContent = (content: string) => {
-    // Check if message contains a table (lines with |)
+  // Helper to parse inline styles: bold, italic, inline code
+  const renderInlineFormatted = (text: string): React.ReactNode => {
+    // Split by inline code `...`
+    const parts = text.split(/(`[^`]+`)/g);
+
+    return parts.map((part, pIdx) => {
+      if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+        return (
+          <code
+            key={pIdx}
+            className="px-1.5 py-0.5 mx-0.5 rounded bg-[#161a22] border border-[#2d3546] text-[#f59e0b] font-mono text-[12px]"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+
+      // Parse **bold** inside text
+      const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
+      return (
+        <span key={pIdx}>
+          {boldParts.map((bPart, bIdx) => {
+            if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length > 4) {
+              return (
+                <strong key={bIdx} className="font-bold text-[#fbbf24]">
+                  {bPart.slice(2, -2)}
+                </strong>
+              );
+            }
+            return bPart;
+          })}
+        </span>
+      );
+    });
+  };
+
+  // Comprehensive renderer: code blocks, tables, lists, inline markdown
+  const renderFormattedContent = (content: string, messageId: string) => {
+    // 1. Check for fenced code blocks
+    if (content.includes('```')) {
+      const segments: React.ReactNode[] = [];
+      const codeRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      let blockIndex = 0;
+
+      while ((match = codeRegex.exec(content)) !== null) {
+        if (match.index > lastIndex) {
+          const textBefore = content.substring(lastIndex, match.index).trim();
+          if (textBefore) {
+            segments.push(
+              <div key={`txt_${blockIndex}`} className="space-y-1.5 leading-relaxed whitespace-pre-wrap">
+                {renderInlineFormatted(textBefore)}
+              </div>
+            );
+          }
+        }
+
+        const lang = match[1] || 'code';
+        const codeText = match[2].trim();
+        const codeKey = `${messageId}_code_${blockIndex}`;
+
+        segments.push(
+          <div
+            key={codeKey}
+            className="my-3 rounded-xl border border-[#283042] bg-[#0c0e13] overflow-hidden text-xs font-mono shadow-md"
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 bg-[#141720] border-b border-[#232a3a] text-[#8894a8]">
+              <span className="text-[11px] font-semibold text-[#f59e0b] uppercase tracking-wider">{lang}</span>
+              <button
+                type="button"
+                onClick={() => handleCopyCode(codeKey, codeText)}
+                className="flex items-center gap-1 text-[11px] hover:text-white transition-colors"
+                title="Copiar código"
+              >
+                {copiedCodeId === codeKey ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#4ade80]" />
+                    <span className="text-[#4ade80]">Copiado</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copiar código</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <pre className="p-3 overflow-x-auto text-[#e2e8f0] leading-relaxed">
+              <code>{codeText}</code>
+            </pre>
+          </div>
+        );
+
+        lastIndex = match.index + match[0].length;
+        blockIndex++;
+      }
+
+      if (lastIndex < content.length) {
+        const textAfter = content.substring(lastIndex).trim();
+        if (textAfter) {
+          segments.push(
+            <div key="txt_after" className="space-y-1.5 leading-relaxed whitespace-pre-wrap">
+              {renderInlineFormatted(textAfter)}
+            </div>
+          );
+        }
+      }
+
+      return <div className="space-y-2">{segments}</div>;
+    }
+
+    // 2. Check for markdown tables
     const lines = content.split('\n');
     const isTable = lines.some((l) => l.trim().startsWith('|') && l.trim().endsWith('|'));
 
@@ -57,7 +179,7 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
       return (
         <div className="space-y-3 font-sans">
           {textLines.length > 0 && (
-            <p className="leading-relaxed whitespace-pre-wrap">{textLines.join('\n').trim()}</p>
+            <p className="leading-relaxed whitespace-pre-wrap">{renderInlineFormatted(textLines.join('\n').trim())}</p>
           )}
           <div className="overflow-x-auto my-2 rounded-lg border border-[#252b3a] bg-[#0f1218]">
             <table className="w-full text-xs font-sans text-left">
@@ -81,7 +203,7 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
                       .filter((c) => c.trim().length > 0)
                       .map((cell, cellIdx) => (
                         <td key={cellIdx} className="p-2.5">
-                          {cell.trim()}
+                          {renderInlineFormatted(cell.trim())}
                         </td>
                       ))}
                   </tr>
@@ -93,10 +215,10 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
       );
     }
 
-    // Default rich text rendering
+    // 3. Default rich text rendering with bullet lists and paragraphs
     return (
       <div className="leading-relaxed whitespace-pre-wrap font-sans text-sm">
-        {content}
+        {renderInlineFormatted(content)}
       </div>
     );
   };
@@ -162,7 +284,7 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
                       : 'bg-[#151821] border-[#262c3b] text-[#f1f5f9] rounded-tl-none'
                   }`}
                 >
-                  {renderFormattedContent(msg.content)}
+                  {renderFormattedContent(msg.content, msg.id)}
                 </div>
 
                 {/* Action Toolbar for AI message */}
@@ -219,6 +341,23 @@ export const ChatFeedStream: React.FC<ChatFeedStreamProps> = ({
             <span className="w-2 h-2 rounded-full bg-[#f59e0b] animate-ping" />
             <span>Kurisu está formulando resposta e recuperando memórias...</span>
           </div>
+        </div>
+      )}
+
+      {/* Transient Error Notice Banner */}
+      {errorNotice && (
+        <div className="flex gap-3 max-w-3xl mr-auto items-center p-3 rounded-xl border border-[#ef4444]/60 bg-[#260e0e]/95 text-xs font-mono text-[#fca5a5] shadow-lg animate-fadeIn">
+          <AlertCircle className="w-4 h-4 text-[#ef4444] shrink-0" />
+          <div className="flex-1 font-sans">{errorNotice}</div>
+          {onDismissError && (
+            <button
+              onClick={onDismissError}
+              className="text-[#94a3b8] hover:text-white p-1 rounded"
+              title="Fechar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
