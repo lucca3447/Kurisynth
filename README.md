@@ -14,25 +14,6 @@ A full-stack, modular multimodal conversational AI runtime featuring interactive
 
 ---
 
-> ### ⚖️ Legal Disclaimer & Intellectual Property Notice
-> 
-> **Non-Commercial Fan Project:**  
-> **OpenAmadeus Companion** is an independent, non-commercial open-source research and educational tribute project inspired by *Steins;Gate 0*. It is free, non-monetized, and open to the community for exploring human-computer interaction and multimodal conversational agents.
-> 
-> **Trademarks & Copyrights:**  
-> All characters, names, lore, and visual assets related to *STEINS;GATE* (including *Makise Kurisu*, *Amadeus System*, *Viktor Chondria University*, and *Lab 304*) are registered trademarks and copyrighted properties of **MAGES. Inc. / 5pb. / Chiyomaru Studio / KADOKAWA**. This project is not affiliated with, endorsed by, or sponsored by these entities.
-> 
-> **Voice Models & Attribution:**  
-> The community acoustic models (RVC v2 and Qwen3-TTS) are hosted externally on Hugging Face by independent researchers. They represent experimental synthetic voice emulation and are neither officially endorsed by nor affiliated with the official Japanese voice actress **Asami Imai (今井 麻美)**.
-> 
-> **Asset Distribution Policy:**  
-> To respect copyright boundaries, **no commercial game assets or sprite images are bundled or tracked in this Git repository**. The engine functions natively with a stylized procedural holographic silhouette. Users wishing to apply local character sprites do so privately on their own machines (`python scripts/setup_sprites.py`).
-> 
-> **Notice & Takedown:**  
-> If you are a copyright holder and believe any material exceeds fair use or infringes your rights, please open an Issue for prompt resolution or removal.
-
----
-
 ## 🔬 Overview
 
 **OpenAmadeus Companion** is an advanced conversational AI interface inspired by the fictional Amadeus system from *Steins;Gate 0*. The application recreates the digitalized persona and consciousness of neuroscientist **Makise Kurisu** (Viktor Chondria University - Lab 304) using strict natural language system directives, episodic semantic memory retrieval, and synchronized audiovisual rendering.
@@ -358,9 +339,21 @@ Open-source projects, model creators, and communities used:
 - **Microsoft Azure / Edge-TTS**: Neural speech synthesis.
 
 ---
+> ### ⚖️ Legal Disclaimer & Intellectual Property Notice
+> 
+> **Non-Commercial Project:**  
+> **OpenAmadeus Companion** is an independent, non-commercial open-source research and educational tribute project inspired by *Steins;Gate 0*. It is free, non-monetized, and open to the community for exploring human-computer interaction and multimodal conversational agents.
+> 
+> **Trademarks & Copyrights:**  
+> All characters, names, lore, and visual assets related to *STEINS;GATE* (including *Makise Kurisu*, *Amadeus System*, *Viktor Chondria University*, and *Lab 304*) are registered trademarks and copyrighted properties of **MAGES. Inc. / 5pb. / Chiyomaru Studio / KADOKAWA**. This project is not affiliated with, endorsed by, or sponsored by these entities.
+> 
+> **Voice Models & Attribution:**  
+> The community acoustic models (RVC v2 and Qwen3-TTS) are hosted externally on Hugging Face by independent researchers. They represent experimental synthetic voice emulation and are neither officially endorsed by nor affiliated with the official Japanese voice actress **Asami Imai (今井 麻美)**.
+> 
+> **Asset Distribution Policy:**  
+> To respect copyright boundaries, **no commercial game assets or sprite images are bundled or tracked in this Git repository**. The engine functions natively with a stylized procedural holographic silhouette. Users wishing to apply local character sprites do so privately on their own machines (`python scripts/setup_sprites.py`).
+> 
+> **Notice & Takedown:**  
+>If you are a copyright holder and believe any material exceeds fair use or infringes your rights, please open an Issue for prompt resolution or removal.
 
-## ⚖️ Disclaimer & Intellectual Property
 
-- *Steins;Gate*, *Steins;Gate 0*, the character **Makise Kurisu**, related concepts, and visual novel sprite assets are the intellectual property of **MAGES. Inc. / 5pb. / Chiyomaru Shikura / Nitroplus**.
-- This project is an independent, non-commercial open-source research and educational application created under Fair Use.
-- Software is distributed under the [GNU General Public License v3](LICENSE).
