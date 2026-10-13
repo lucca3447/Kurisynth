@@ -162,7 +162,7 @@ export const MemoryInspectorModal: React.FC<MemoryInspectorModalProps> = ({
               <Brain className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-amadeus-accent tracking-wider text-glow-green">
+              <h2 className="text-sm font-bold text-amadeus-accent tracking-wider text-glow-nixie">
                 INSPETOR DE CÓRTEX & MEMÓRIAS // {persona.name.toUpperCase()}
               </h2>
               <div className="text-[11px] text-amadeus-muted flex items-center gap-2">
