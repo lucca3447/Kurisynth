@@ -68,10 +68,86 @@ class QwenTTSManager:
         return None
 
     @classmethod
-    async def is_worker_healthy(cls) -> bool:
+    def resolve_target_url(
+        cls,
+        qwen_mode: Optional[str] = None,
+        custom_url: Optional[str] = None,
+    ) -> str:
+        """
+        Resolves the target Qwen worker URL:
+        1. Explicit custom_url (from request or frontend settings)
+        2. Environment variable QWEN_REMOTE_URL (if mode is remote or auto)
+        3. Local loopback default (http://127.0.0.1:8005)
+        """
+        if custom_url and custom_url.strip():
+            url = custom_url.strip().rstrip("/")
+            if url.startswith("http://") or url.startswith("https://"):
+                return url
+
+        mode = (qwen_mode or os.environ.get("QWEN_MODE", "remote")).lower()
+        if mode in ("remote", "auto"):
+            env_remote = os.environ.get("QWEN_REMOTE_URL", "").strip().rstrip("/")
+            if env_remote and (env_remote.startswith("http://") or env_remote.startswith("https://")):
+                return env_remote
+
+        return f"http://127.0.0.1:{WORKER_PORT}"
+
+    @classmethod
+    def is_remote_url(cls, url: str) -> bool:
+        norm = url.lower()
+        return not ("127.0.0.1" in norm or "localhost" in norm)
+
+    @classmethod
+    async def ping_worker(cls, target_url: Optional[str] = None) -> dict:
+        """
+        Probes the target worker /health endpoint, returning status, device telemetry,
+        and latency in milliseconds.
+        """
+        url = (target_url or cls.resolve_target_url()).rstrip("/")
+        import time
+        t0 = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=1.0) as client:
-                res = await client.get(f"{WORKER_URL}/health")
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(f"{url}/health")
+                ping_ms = round((time.perf_counter() - t0) * 1000, 1)
+                if res.status_code == 200:
+                    data = res.json()
+                    return {
+                        "status": data.get("status", "unknown"),
+                        "device": data.get("device", "unknown"),
+                        "vram_allocated_mb": data.get("vram_allocated_mb"),
+                        "ping_ms": ping_ms,
+                        "url": url,
+                        "mode": "remote" if cls.is_remote_url(url) else "local",
+                        "error": None,
+                    }
+                return {
+                    "status": "error",
+                    "device": None,
+                    "vram_allocated_mb": None,
+                    "ping_ms": ping_ms,
+                    "url": url,
+                    "mode": "remote" if cls.is_remote_url(url) else "local",
+                    "error": f"HTTP {res.status_code}: {res.text[:100]}",
+                }
+        except Exception as e:
+            ping_ms = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "status": "offline",
+                "device": None,
+                "vram_allocated_mb": None,
+                "ping_ms": ping_ms,
+                "url": url,
+                "mode": "remote" if cls.is_remote_url(url) else "local",
+                "error": str(e),
+            }
+
+    @classmethod
+    async def is_worker_healthy(cls, target_url: Optional[str] = None) -> bool:
+        url = (target_url or cls.resolve_target_url()).rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                res = await client.get(f"{url}/health")
                 if res.status_code == 200:
                     data = res.json()
                     return data.get("status") == "ready"
@@ -121,10 +197,11 @@ class QwenTTSManager:
             return False
 
     @classmethod
-    async def get_worker_status(cls) -> Optional[str]:
+    async def get_worker_status(cls, target_url: Optional[str] = None) -> Optional[str]:
+        url = (target_url or cls.resolve_target_url()).rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.get(f"{WORKER_URL}/health")
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                res = await client.get(f"{url}/health")
                 if res.status_code == 200:
                     data = res.json()
                     return data.get("status")
@@ -133,17 +210,22 @@ class QwenTTSManager:
         return None
 
     @classmethod
-    async def ensure_worker(cls, max_wait_sec: float = 150.0) -> bool:
-        if await cls.is_worker_healthy():
+    async def ensure_worker(cls, max_wait_sec: float = 150.0, target_url: Optional[str] = None) -> bool:
+        url = target_url or cls.resolve_target_url()
+        # If targeting a remote server, do not attempt to spawn local subprocesses
+        if cls.is_remote_url(url):
+            return await cls.is_worker_healthy(url)
+
+        if await cls.is_worker_healthy(url):
             return True
 
         async with _spawn_lock:
-            if await cls.is_worker_healthy():
+            if await cls.is_worker_healthy(url):
                 return True
 
             # If target worker port is occupied but unreachable/unhealthy, clean up stale zombie process
             if is_port_in_use(WORKER_PORT):
-                status = await cls.get_worker_status()
+                status = await cls.get_worker_status(url)
                 if status != "ready" and status != "initializing":
                     print(f"[Qwen3 Manager] Port {WORKER_PORT} occupied by unresponsive process. Clearing stale port...")
                     kill_process_on_port(WORKER_PORT)
@@ -152,11 +234,11 @@ class QwenTTSManager:
             if not cls.start_worker_process():
                 return False
 
-            print("[Qwen3 Manager] Waiting for model to load into GPU memory...")
+            print("[Qwen3 Manager] Waiting for local model to load into GPU memory...")
             start_time = asyncio.get_event_loop().time()
             while asyncio.get_event_loop().time() - start_time < max_wait_sec:
                 await asyncio.sleep(1.0)
-                status = await cls.get_worker_status()
+                status = await cls.get_worker_status(url)
                 if status == "ready":
                     print("[Qwen3 Manager] Qwen3 Worker is ready and resident in GPU memory!")
                     return True
@@ -164,7 +246,7 @@ class QwenTTSManager:
                     print(f"[Qwen3 Manager] Worker reported initialization failure: {status}")
                     return False
 
-            print("[Qwen3 Manager] Timeout waiting for Qwen3 Worker initialization.")
+            print("[Qwen3 Manager] Timeout waiting for local Qwen3 Worker initialization.")
             return False
 
     @classmethod
@@ -174,27 +256,40 @@ class QwenTTSManager:
         emotion: Optional[str] = None,
         custom_instruct: Optional[str] = None,
         language: str = "Portuguese",
+        qwen_mode: Optional[str] = "remote",
+        qwen_remote_url: Optional[str] = None,
     ) -> Optional[bytes]:
         """
-        Synthesizes speech using the resident Kurisu Qwen3-TTS worker.
+        Synthesizes speech using the Qwen3-TTS worker (either remote Colab/tunnel or local GPU).
         Returns WAV audio bytes, or None if worker is offline or fails (allowing graceful fallback).
         """
-        is_healthy = await cls.is_worker_healthy()
-        if not is_healthy:
-            is_healthy = await cls.ensure_worker(max_wait_sec=150.0)
+        target_url = cls.resolve_target_url(qwen_mode=qwen_mode, custom_url=qwen_remote_url)
+        is_remote = cls.is_remote_url(target_url)
 
-        if not is_healthy:
-            print("[Qwen3 Manager] Worker offline or initialization timed out; falling back to alternative engine.")
-            return None
+        print(f"[Qwen3 Manager] Selected target: {target_url} (mode: {'remote' if is_remote else 'local'})")
+
+        if is_remote:
+            # Remote check with quick probe
+            is_healthy = await cls.is_worker_healthy(target_url)
+            if not is_healthy:
+                print(f"[Qwen3 Manager] Remote worker at {target_url} is unreachable or not ready.")
+                return None
+        else:
+            # Local worker management
+            is_healthy = await cls.ensure_worker(max_wait_sec=150.0, target_url=target_url)
+            if not is_healthy:
+                print("[Qwen3 Manager] Local worker offline or initialization timed out.")
+                return None
 
         # Resolve emotional and acoustic environment prompt
         instruct = resolve_acoustic_instruct(emotion=emotion, custom_instruct=custom_instruct)
 
         try:
-            print(f"[Qwen3 Manager] Dispatching synthesis to worker (chars: {len(text)})...")
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            print(f"[Qwen3 Manager] Dispatching synthesis to {target_url} (chars: {len(text)})...")
+            # Remote requests over Cloudflare tunnel may need a generous timeout (up to 90s)
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 res = await client.post(
-                    f"{WORKER_URL}/synthesize",
+                    f"{target_url}/synthesize",
                     json={
                         "text": text,
                         "language": language or "Portuguese",
@@ -203,10 +298,11 @@ class QwenTTSManager:
                 )
                 if res.status_code == 200:
                     return res.content
-                print(f"[Qwen3 Manager] Worker returned error {res.status_code}: {res.text}")
+                print(f"[Qwen3 Manager] Worker at {target_url} returned error {res.status_code}: {res.text[:150]}")
         except httpx.TimeoutException:
-            print(f"[Qwen3 Manager] Synthesis timed out after 120s (utterance length: {len(text)} chars).")
+            print(f"[Qwen3 Manager] Synthesis timed out after 90s at {target_url} (utterance: {len(text)} chars).")
         except Exception as e:
-            print(f"[Qwen3 Manager] Communication error with worker: {e}")
+            print(f"[Qwen3 Manager] Communication error with {target_url}: {e}")
 
         return None
+

@@ -73,11 +73,24 @@ class RVCManager:
         return False
 
     @classmethod
+    def list_available_models(cls) -> list[str]:
+        weights_dir = os.path.join(SERVER_DIR, "weights")
+        models = []
+        if os.path.isdir(weights_dir):
+            for root, _, files in os.walk(weights_dir):
+                for f in files:
+                    if f.endswith(".pth") and not f.startswith("hubert") and not f.startswith("rmvpe"):
+                        models.append(os.path.splitext(f)[0])
+        res = sorted(list(set(models)))
+        return res if res else ["KurisuRVCv147"]
+
+    @classmethod
     async def convert(
         cls,
         audio_bytes: bytes,
         pitch_shift: int = 0,
         index_rate: float = 0.75,
+        model_name: Optional[str] = "KurisuRVCv147",
     ) -> Optional[bytes]:
         is_healthy = await cls.is_worker_healthy()
         if not is_healthy:
@@ -87,12 +100,19 @@ class RVCManager:
             print("[RVC Manager] Worker is offline; falling back to direct Edge-TTS audio.")
             return None
 
+        params = {
+            "pitch_shift": pitch_shift,
+            "index_rate": index_rate,
+        }
+        if model_name:
+            params["model_name"] = model_name
+
         try:
             async with httpx.AsyncClient(timeout=35.0) as client:
                 res = await client.post(
                     f"{WORKER_URL}/convert",
                     content=audio_bytes,
-                    params={"pitch_shift": pitch_shift, "index_rate": index_rate},
+                    params=params,
                     headers={"Content-Type": "application/octet-stream"},
                 )
                 if res.status_code == 200:
@@ -102,3 +122,4 @@ class RVCManager:
         except Exception as e:
             print(f"[RVC Manager] Exception during voice conversion request: {e}")
             return None
+

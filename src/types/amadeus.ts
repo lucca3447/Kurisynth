@@ -90,12 +90,34 @@ export interface VoiceSettings {
   volume: number;
   autoSpeak: boolean;
   lang: string;
-  engine?: 'qwen3' | 'edge_rvc';
+  engine?: 'qwen3' | 'kokoro' | 'edge_rvc';
+  qwenMode?: 'remote' | 'local' | 'auto';
+  qwenRemoteUrl?: string;
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
+  rvcModel?: string;
   rvcPitch?: number;
   rvcIndexRate?: number;
+}
+
+export interface QwenWorkerStatus {
+  status: 'ready' | 'initializing' | 'offline' | 'error' | string;
+  device?: string | null;
+  vram_allocated_mb?: number | null;
+  ping_ms?: number | null;
+  mode: 'remote' | 'local';
+  url?: string | null;
+  error?: string | null;
+}
+
+export interface VoiceEngineStatus {
+  qwen_remote: QwenWorkerStatus;
+  qwen_local: QwenWorkerStatus;
+  kokoro_available: boolean;
+  rvc_available: boolean;
+  rvc_models: string[];
+  active_engine: string;
 }
 
 export interface SystemConfig {

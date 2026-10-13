@@ -13,6 +13,7 @@ except ImportError:
 
 from app.services.rvc.rvc_manager import RVCManager
 from app.services.qwen_tts.qwen_manager import QwenTTSManager
+from app.services.kokoro_tts.kokoro_manager import KokoroTTSManager
 
 
 def check_edge_tts_available() -> bool:
@@ -79,78 +80,149 @@ async def synthesize_speech(
     rate: str = "+5%",
     pitch: str = "+15Hz",
     use_rvc: bool = False,
+    rvc_model: Optional[str] = "KurisuRVCv147",
     rvc_pitch: int = 0,
     rvc_index_rate: float = 0.75,
-    engine: str = "edge_rvc",
+    engine: str = "qwen3",
+    qwen_mode: Optional[str] = "remote",
+    qwen_remote_url: Optional[str] = None,
     emotion: Optional[str] = None,
     instruct: Optional[str] = None,
 ) -> Tuple[str, AsyncGenerator[bytes, None]]:
     """
-    Synthesizes speech:
-    1. If engine == "qwen3": synthesizes directly in Makise Kurisu's voice using
-       resident Qwen3-TTS neural worker. Falls back to Edge-TTS+RVC if offline.
-    2. If engine == "edge_rvc" and use_rvc is False, streams Edge-TTS audio directly (audio/mpeg).
-    3. If engine == "edge_rvc" and use_rvc is True, converts Edge-TTS output using the Kurisu RVC Neural Worker
-       into Makise Kurisu's cloned voice (audio/wav).
-    4. If conversion/Qwen fails, transparently falls back to Edge-TTS.
+    Modular speech orchestrator with sequential fallback:
+    1. Qwen3-TTS (Remote Colab URL if configured / Local if designated)
+    2. Qwen3-TTS (Local loopback fallback if remote is offline and local worker ready)
+    3. Kokoro-TTS (Lightweight 82M offline local synthesis, optionally enhanced with RVC)
+    4. Edge-TTS (Neural cloud fallback, optionally enhanced with RVC)
     """
     clean_text = clean_speech_text(text)
     if not clean_text:
         raise HTTPException(status_code=400, detail="Texto não pode ser vazio para síntese de voz.")
 
-    # 1. Qwen3-TTS Direct Neural Path
-    if engine == "qwen3":
-        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis | Emotion: '{emotion or 'neutral'}' | Text: \"{clean_text}\"")
+    active_engine = (engine or "qwen3").lower()
+
+    # =========================================================================
+    # STEP 1: Qwen3-TTS (Primary or Fallback)
+    # =========================================================================
+    if active_engine == "qwen3":
+        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis (mode: {qwen_mode}) | Emotion: '{emotion or 'neutral'}' | Text: \"{clean_text}\"")
+
+        # 1.1 Attempt primary mode (Remote Colab or Local as requested)
         try:
             qwen_wav = await QwenTTSManager.synthesize(
                 text=clean_text,
                 emotion=emotion,
                 custom_instruct=instruct,
                 language="Portuguese",
+                qwen_mode=qwen_mode or "remote",
+                qwen_remote_url=qwen_remote_url,
             )
             if qwen_wav:
                 async def _qwen_gen():
                     yield qwen_wav
                 return "audio/wav", _qwen_gen()
-            print("[Amadeus Voice] Qwen3 indisponível ou falhou; fallback automático para Edge-TTS + RVC.")
         except Exception as e:
-            print(f"[Amadeus Voice] Erro no Qwen3-TTS: {e}; chaveando para fallback Edge-TTS + RVC.")
-        
-        # Fallback to RVC if Qwen is requested but fails
+            print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) error: {e}")
+
+        # 1.2 If Remote failed and mode was remote, check if Local worker happens to be healthy
+        if qwen_mode == "remote":
+            local_url = "http://127.0.0.1:8005"
+            if await QwenTTSManager.is_worker_healthy(local_url):
+                print("[Amadeus Voice] Remote Qwen offline, but Local Qwen worker is active! Attempting Local Qwen...")
+                try:
+                    qwen_local_wav = await QwenTTSManager.synthesize(
+                        text=clean_text,
+                        emotion=emotion,
+                        custom_instruct=instruct,
+                        language="Portuguese",
+                        qwen_mode="local",
+                    )
+                    if qwen_local_wav:
+                        async def _local_gen():
+                            yield qwen_local_wav
+                        return "audio/wav", _local_gen()
+                except Exception as local_err:
+                    print(f"[Amadeus Voice] Local Qwen fallback error: {local_err}")
+
+        # Cascade down to Kokoro-TTS with Kurisu RVC enabled
+        print("[Amadeus Voice] Qwen3 offline or failed; cascaded fallback to Kokoro-TTS + RVC.")
+        active_engine = "kokoro"
         use_rvc = True
 
-    # 2. Direct Edge-TTS (No RVC)
-    if not use_rvc:
-        return "audio/mpeg", generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch)
+    # =========================================================================
+    # STEP 2: Kokoro-TTS (Lightweight local 82M)
+    # =========================================================================
+    if active_engine == "kokoro":
+        print(f"[Amadeus Voice] ⚡ Kokoro-TTS Synthesis | Text: \"{clean_text}\"")
+        try:
+            kokoro_wav = await KokoroTTSManager.synthesize(
+                text=clean_text,
+                voice="pf_dora",
+                speed=1.05,
+            )
+            if kokoro_wav:
+                # If RVC requested (or fallback from Kurisu voice), convert timbre
+                if use_rvc:
+                    print(f"[Amadeus Voice] Applying RVC model '{rvc_model}' on Kokoro audio...")
+                    converted_wav = await RVCManager.convert(
+                        audio_bytes=kokoro_wav,
+                        pitch_shift=rvc_pitch,
+                        index_rate=rvc_index_rate,
+                        model_name=rvc_model or "KurisuRVCv147",
+                    )
+                    if converted_wav:
+                        async def _kokoro_rvc_gen():
+                            yield converted_wav
+                        return "audio/wav", _kokoro_rvc_gen()
+                    print("[Amadeus Voice] RVC conversion failed; serving base Kokoro-TTS audio.")
 
-    # 3. Collect Edge-TTS audio chunks for RVC conversion
-    edge_chunks = []
-    async for chunk in generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch):
-        edge_chunks.append(chunk)
+                async def _kokoro_gen():
+                    yield kokoro_wav
+                return "audio/wav", _kokoro_gen()
+        except Exception as e:
+            print(f"[Amadeus Voice] Kokoro-TTS failed ({e}); cascading to Edge-TTS.")
 
-    edge_audio_bytes = b"".join(edge_chunks)
-    if not edge_audio_bytes:
-        raise HTTPException(status_code=500, detail="Falha ao gerar áudio base para conversão RVC.")
+        active_engine = "edge_rvc"
 
-    # 4. Attempt RVC conversion
+    # =========================================================================
+    # STEP 3: Edge-TTS (Cloud Neural Fallback)
+    # =========================================================================
+    print(f"[Amadeus Voice] 🌐 Edge-TTS Fallback (RVC: {use_rvc}) | Text: \"{clean_text}\"")
     try:
+        if not use_rvc:
+            return "audio/mpeg", generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch)
+
+        edge_chunks = []
+        async for chunk in generate_edge_tts_stream(clean_text, voice=voice, rate=rate, pitch=pitch):
+            edge_chunks.append(chunk)
+
+        edge_audio_bytes = b"".join(edge_chunks)
+        if not edge_audio_bytes:
+            raise HTTPException(status_code=500, detail="Falha ao gerar áudio base Edge-TTS.")
+
+        # Attempt RVC conversion
         converted_wav = await RVCManager.convert(
             audio_bytes=edge_audio_bytes,
             pitch_shift=rvc_pitch,
             index_rate=rvc_index_rate,
+            model_name=rvc_model or "KurisuRVCv147",
         )
         if converted_wav:
             async def _wav_gen():
                 yield converted_wav
             return "audio/wav", _wav_gen()
-        else:
-            print("[Amadeus Voice] Fallback: RVC retorno vazio/erro, reproduzindo Edge-TTS original.")
-    except Exception as err:
-        print(f"[Amadeus Voice] Falha na conversão RVC, executando fallback transparente: {err}")
 
-    # 5. Final fallback to base Edge-TTS
-    async def _fallback_gen():
-        yield edge_audio_bytes
+        # Fallback to base Edge-TTS audio if RVC fails
+        async def _edge_fallback():
+            yield edge_audio_bytes
+        return "audio/mpeg", _edge_fallback()
 
-    return "audio/mpeg", _fallback_gen()
+    except Exception as edge_err:
+        print(f"[Amadeus Voice] Edge-TTS error: {edge_err}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Todos os motores de voz falharam na cascata de fallback: {str(edge_err)}"
+        )
+
 
