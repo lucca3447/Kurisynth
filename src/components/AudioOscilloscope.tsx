@@ -23,6 +23,27 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
     let animationFrameId: number;
     let phase = 0;
 
+    // Responsive Canvas Resizing for high-DPI razor-sharp lines
+    const updateSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(Math.floor(rect.width * dpr), 320);
+      const targetHeight = Math.max(Math.floor(rect.height * dpr), 60);
+
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+    };
+
+    updateSize();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => updateSize());
+      resizeObserver.observe(canvas);
+    }
+
     const render = () => {
       const width = canvas.width;
       const height = canvas.height;
@@ -41,7 +62,8 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
       ctx.moveTo(0, centerY);
       ctx.lineTo(width, centerY);
       // Vertical grid lines
-      for (let x = 0; x < width; x += 32) {
+      const gridStep = Math.max(Math.floor(width / 16), 24);
+      for (let x = 0; x < width; x += gridStep) {
         ctx.moveTo(x, 0);
         ctx.lineTo(x, height);
       }
@@ -50,6 +72,7 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
       // Check for real acoustic waveform from SpeechService AnalyserNode
       const analyser = SpeechService.getAnalyser();
       let hasRealAudio = false;
+      let currentSpeed = 0.05;
 
       if (isActive && analyser) {
         const timeData = new Uint8Array(analyser.fftSize);
@@ -62,9 +85,10 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
 
         if (variance > 40) {
           hasRealAudio = true;
+          currentSpeed = 0.14;
           ctx.beginPath();
           ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.5;
           ctx.shadowBlur = 14;
           ctx.shadowColor = '#f59e0b';
 
@@ -73,7 +97,7 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
 
           for (let i = 0; i < timeData.length; i++) {
             const v = timeData[i] / 128.0;
-            const y = (v * (height / 2));
+            const y = v * (height / 2);
 
             if (i === 0) {
               ctx.moveTo(currentX, y);
@@ -89,15 +113,14 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
 
       // Draw aesthetic harmonic wave when not using real audio
       if (!hasRealAudio) {
-        let baseAmplitude = 5;
-        let speed = 0.05;
+        let baseAmplitude = height * 0.08;
 
         if (isActive) {
-          baseAmplitude = 22 + Math.sin(phase * 3) * 10;
-          speed = 0.14;
+          baseAmplitude = height * 0.32 + Math.sin(phase * 3) * (height * 0.12);
+          currentSpeed = 0.14;
         } else if (isListening) {
-          baseAmplitude = 16 + Math.sin(phase * 4) * 8;
-          speed = 0.12;
+          baseAmplitude = height * 0.22 + Math.sin(phase * 4) * (height * 0.08);
+          currentSpeed = 0.12;
         }
 
         ctx.beginPath();
@@ -107,11 +130,12 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
         ctx.shadowColor = isActive ? '#f59e0b' : isListening ? '#38bdf8' : 'transparent';
 
         for (let x = 0; x < width; x++) {
-          const wave1 = Math.sin(x * 0.03 + phase) * baseAmplitude;
-          const wave2 = Math.sin(x * 0.07 - phase * 1.5) * (baseAmplitude * 0.4);
-          const wave3 = Math.cos(x * 0.015 + phase * 0.5) * (baseAmplitude * 0.2);
+          const normX = x / width;
+          const wave1 = Math.sin(normX * 16 + phase) * baseAmplitude;
+          const wave2 = Math.sin(normX * 36 - phase * 1.5) * (baseAmplitude * 0.4);
+          const wave3 = Math.cos(normX * 8 + phase * 0.5) * (baseAmplitude * 0.2);
 
-          const taper = Math.sin((x / width) * Math.PI);
+          const taper = Math.sin(normX * Math.PI);
           const y = centerY + (wave1 + wave2 + wave3) * taper;
 
           if (x === 0) {
@@ -124,7 +148,7 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
         ctx.shadowBlur = 0;
       }
 
-      phase += 0.06;
+      phase += currentSpeed;
       animationFrameId = requestAnimationFrame(render);
     };
 
@@ -132,12 +156,13 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      if (resizeObserver) resizeObserver.disconnect();
     };
   }, [isActive, isListening]);
 
   return (
     <div className={`relative border border-amadeus-border bg-[#0b0e14] rounded-lg overflow-hidden shadow-sm ${className}`}>
-      <div className="absolute top-1.5 left-2.5 text-[10px] font-mono text-amadeus-muted tracking-wider flex items-center gap-1.5 z-10">
+      <div className="absolute top-1.5 left-2.5 text-[10px] font-mono text-amadeus-muted tracking-wider flex items-center gap-1.5 z-10 select-none pointer-events-none">
         <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#f59e0b] animate-ping' : isListening ? 'bg-[#38bdf8] animate-pulse' : 'bg-[#78350f]'}`} />
         <span className="text-[#94a3b8]">OSCILOSCÓPIO:</span>
         <span className={`font-semibold ${isActive ? 'text-[#f59e0b]' : isListening ? 'text-[#38bdf8]' : 'text-[#64748b]'}`}>
@@ -146,8 +171,6 @@ export const AudioOscilloscope: React.FC<AudioOscilloscopeProps> = ({
       </div>
       <canvas
         ref={canvasRef}
-        width={360}
-        height={80}
         className="w-full h-full block"
       />
     </div>
