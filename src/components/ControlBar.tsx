@@ -4,11 +4,9 @@ import {
   MicOff, 
   Volume2, 
   VolumeX, 
-  Database, 
+  Brain, 
   Settings, 
-  PhoneOff, 
-  Send,
-  Sparkles
+  PhoneOff
 } from 'lucide-react';
 
 interface ControlBarProps {
@@ -44,90 +42,87 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col sm:flex-row items-center gap-2 pt-2 pb-3 px-2 z-30 select-none">
+    <div className="w-full max-w-4xl mx-auto flex flex-col sm:flex-row items-center gap-2.5 pt-2 pb-3 px-3 z-30 select-none font-mono">
       {/* Text Input Form */}
       <form onSubmit={handleSend} className="w-full flex-1 flex items-center relative">
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder={isListening ? 'Escutando sua voz...' : 'Digite sua mensagem para o Amadeus...'}
+          placeholder={isListening ? 'Escutando sua voz...' : 'Digite sua mensagem para a Kurisu...'}
           disabled={disabled}
-          className="w-full h-11 pl-4 pr-12 rounded-lg bg-amadeus-panel border border-amadeus-border text-sm text-[#e0f0e8] placeholder-amadeus-muted/60 focus:outline-none focus:border-amadeus-accent/80 focus:ring-1 focus:ring-amadeus-accent/50 font-sans transition-all"
+          className="w-full h-11 pl-4 pr-12 rounded-xl bg-[#12151c]/90 border border-[#262c3a] text-sm text-[#f8fafc] placeholder-[#64748b] focus:outline-none focus:border-[#f59e0b] focus:ring-1 focus:ring-[#f59e0b]/40 font-sans transition-all backdrop-blur-md"
         />
+        {/* Send Button: Iconic Circular Amber Arrow Button from Amadeus Login Screen */}
         <button
           type="submit"
           disabled={disabled || !inputValue.trim()}
-          title="Enviar Mensagem (Enter)"
-          className="absolute right-1.5 w-8 h-8 rounded flex items-center justify-center bg-amadeus-border/60 hover:bg-amadeus-accent hover:text-black text-amadeus-accent transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-amadeus-accent"
+          title="Transmitir para Amadeus (Enter)"
+          className="absolute right-1.5 w-8 h-8 rounded-full bg-[#f59e0b] hover:bg-[#fbbf24] text-black font-bold text-sm flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.5)] transition-all disabled:opacity-30 disabled:hover:bg-[#f59e0b] disabled:hover:text-black transform hover:scale-105 active:scale-95"
         >
-          <Send className="w-4 h-4" />
+          <span className="translate-x-[0.5px]">➔</span>
         </button>
       </form>
 
-      {/* Action Buttons Toolbar */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      {/* Action Buttons Toolbar (100% Iconic Buttons) */}
+      <div className="flex items-center gap-2 shrink-0 p-1 rounded-xl bg-[#141720]/80 border border-[#252b3a] backdrop-blur-md">
         {/* Microphone STT */}
         <button
           type="button"
           onClick={onToggleMic}
           disabled={disabled}
-          title={isListening ? 'Parar Microfone' : 'Falar no Microfone (STT Grátis)'}
-          className={`h-11 px-3 rounded-lg border font-mono text-xs flex items-center gap-1.5 transition-all ${
+          title={isListening ? 'Microfone Ativo (Clique para pausar)' : 'Ativar Microfone (Reconhecimento de Voz)'}
+          className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
             isListening 
-              ? 'bg-amadeus-cyan/20 border-amadeus-cyan text-amadeus-cyan shadow-[0_0_12px_rgba(56,225,255,0.4)] animate-pulse' 
-              : 'bg-amadeus-panel border-amadeus-border text-amadeus-muted hover:text-amadeus-accent hover:border-amadeus-accent/60'
+              ? 'bg-[#38bdf8]/20 border border-[#38bdf8] text-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.4)] animate-pulse' 
+              : 'bg-[#181c26] border border-[#262c3a] text-[#94a3b8] hover:text-[#f59e0b] hover:border-[#f59e0b]/50'
           }`}
         >
           {isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-          <span className="hidden md:inline">{isListening ? 'OUVINDO...' : 'MIC'}</span>
         </button>
 
         {/* TTS Voice Toggle */}
         <button
           type="button"
           onClick={onToggleVoice}
-          title={voiceEnabled ? 'Voz Ativada (Clique para silenciar)' : 'Voz Silenciada (Clique para ativar)'}
-          className={`h-11 px-3 rounded-lg border font-mono text-xs flex items-center gap-1.5 transition-all ${
+          title={voiceEnabled ? 'Voz da Kurisu Ativa (Clique para silenciar)' : 'Voz Silenciada (Clique para ativar síntese)'}
+          className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
             voiceEnabled 
-              ? 'bg-[#0f241a] border-amadeus-accent text-amadeus-accent shadow-[0_0_10px_rgba(0,255,136,0.2)]' 
-              : 'bg-amadeus-panel border-amadeus-border text-amadeus-muted hover:text-[#d0e5da]'
+              ? 'bg-[#201509] border border-[#f59e0b]/60 text-[#f59e0b] box-glow-nixie' 
+              : 'bg-[#181c26] border border-[#262c3a] text-[#64748b] hover:text-[#cbd5e1]'
           }`}
         >
-          {voiceEnabled ? <Volume2 className="w-4 h-4 text-amadeus-accent" /> : <VolumeX className="w-4 h-4" />}
-          <span className="hidden md:inline">VOZ</span>
+          {voiceEnabled ? <Volume2 className="w-4 h-4 text-[#f59e0b]" /> : <VolumeX className="w-4 h-4" />}
         </button>
 
         {/* Memory Cortex Inspector */}
         <button
           type="button"
           onClick={onOpenMemory}
-          title="Inspecionar Banco de Memórias Digitalizadas"
-          className="h-11 px-3 rounded-lg bg-amadeus-panel border border-amadeus-border text-amadeus-muted hover:text-amadeus-accent hover:border-amadeus-accent/60 transition-colors flex items-center gap-1.5 font-mono text-xs"
+          title="Inspecionar Córtex & Memórias Sinápticas"
+          className="h-9 w-9 rounded-lg bg-[#181c26] border border-[#262c3a] text-[#38bdf8] hover:text-white hover:border-[#38bdf8]/60 transition-colors flex items-center justify-center"
         >
-          <Database className="w-4 h-4 text-amadeus-accent/80" />
-          <span className="hidden md:inline">CÓRTEX</span>
+          <Brain className="w-4 h-4" />
         </button>
 
         {/* Settings */}
         <button
           type="button"
           onClick={onOpenSettings}
-          title="Configurações do Sistema"
-          className="h-11 px-3 rounded-lg bg-amadeus-panel border border-amadeus-border text-amadeus-muted hover:text-amadeus-accent hover:border-amadeus-accent/60 transition-colors flex items-center justify-center"
+          title="Configurações do Amadeus"
+          className="h-9 w-9 rounded-lg bg-[#181c26] border border-[#262c3a] text-[#94a3b8] hover:text-[#f59e0b] hover:border-[#f59e0b]/50 transition-colors flex items-center justify-center"
         >
           <Settings className="w-4 h-4" />
         </button>
 
-        {/* End Call */}
+        {/* End Call (Hangup Phone) */}
         <button
           type="button"
           onClick={onEndCall}
           title="Encerrar Conexão com o Amadeus"
-          className="h-11 px-3.5 rounded-lg bg-amadeus-red/20 border border-amadeus-red/60 text-amadeus-red hover:bg-amadeus-red hover:text-white transition-all flex items-center gap-1.5 font-mono text-xs font-bold"
+          className="h-9 px-3 rounded-lg bg-[#dc2626] hover:bg-[#ef4444] text-white shadow-[0_0_12px_rgba(220,38,38,0.5)] transition-all flex items-center justify-center font-bold"
         >
           <PhoneOff className="w-4 h-4" />
-          <span className="hidden md:inline">ENCERRAR</span>
         </button>
       </div>
     </div>

@@ -8,20 +8,21 @@ export default {
     extend: {
       colors: {
         amadeus: {
-          bg: '#080d0b',
-          panel: '#0d1512',
-          card: '#121e1a',
-          border: '#1f3b2f',
-          accent: '#00ff88',
-          glow: '#00cc66',
-          muted: '#628a76',
-          red: '#ff334b',
-          amber: '#ffb020',
-          cyan: '#38e1ff'
+          bg: '#0c0e12',
+          panel: '#12151c',
+          card: '#161922',
+          border: '#262c3a',
+          accent: '#f59e0b',
+          glow: '#fbbf24',
+          muted: '#717d96',
+          red: '#ef4444',
+          amber: '#f59e0b',
+          nixie: '#f59e0b',
+          cyan: '#38bdf8'
         }
       },
       fontFamily: {
-        mono: ['"Share Tech Mono"', '"JetBrains Mono"', 'Consolas', 'monospace'],
+        mono: ['"JetBrains Mono"', '"Share Tech Mono"', 'Consolas', 'monospace'],
         sans: ['"Inter"', 'system-ui', 'sans-serif']
       },
       animation: {

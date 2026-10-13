@@ -34,32 +34,33 @@ export const DivergenceMeter: React.FC = () => {
 
   return (
     <div
-      className="relative flex items-center gap-1 bg-[#100804] border border-[#ff6600]/40 px-2.5 py-1 rounded shadow-[inset_0_0_8px_rgba(255,102,0,0.2)] cursor-help select-none group"
+      className="relative hidden sm:flex items-center gap-1.5 bg-[#100a06] border border-[#d97706] px-2.5 py-1 rounded box-glow-nixie cursor-help select-none group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      title={`Divergence Meter: ${divergence}% [${worldline}]`}
+      title={`Medidor de Divergência: ${divergence}% [${worldline}]`}
     >
-      <div className="flex items-center gap-0.5 font-mono text-xs font-bold tracking-widest text-[#ff8800] drop-shadow-[0_0_6px_rgba(255,136,0,0.9)]">
+      <span className="text-[10px] font-mono text-[#d97706] font-bold">DIV:</span>
+      <div className="flex items-center gap-0.5 font-mono text-xs font-bold tracking-widest text-[#fbbf24] text-glow-nixie">
         {displayChars.map((char, idx) => (
           <span
             key={idx}
             className={`inline-block text-center ${
               char === '.'
-                ? 'w-1 text-[#ffaa33] -mx-0.5'
-                : 'w-2.5 px-0.5 py-0.2 bg-[#220d04]/80 rounded-[2px] border border-[#ff5500]/30 shadow-[0_0_4px_rgba(255,85,0,0.4)]'
+                ? 'w-1 text-[#f59e0b] -mx-0.5'
+                : 'w-2.5 px-0.5 py-0.2 bg-[#261004] rounded-[2px] border border-[#d97706]/40 shadow-[0_0_4px_rgba(245,158,11,0.4)]'
             }`}
           >
             {char}
           </span>
         ))}
-        <span className="text-[10px] text-[#ff7700]/80 ml-0.5">%</span>
+        <span className="text-[10px] text-[#f59e0b] ml-0.5">%</span>
       </div>
 
       {/* Floating tooltip on hover */}
       {isHovered && (
-        <div className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 z-50 bg-[#0d0705] border border-[#ff6600]/50 text-[#ffaa66] text-[10px] font-mono px-2 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none">
-          <div className="font-bold text-[#ff9933]">DIVERGENCE METER</div>
-          <div className="text-[9px] text-[#cca080]">{worldline}</div>
+        <div className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 z-50 bg-[#120a04] border border-[#f59e0b]/50 text-[#fbbf24] text-[10px] font-mono px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none">
+          <div className="font-bold text-[#f59e0b]">MEDIDOR DE DIVERGÊNCIA</div>
+          <div className="text-[9px] text-[#cbd5e1]">{worldline}</div>
         </div>
       )}
     </div>
