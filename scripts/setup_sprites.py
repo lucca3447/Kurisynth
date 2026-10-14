@@ -29,17 +29,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SPRITES_DIR = REPO_ROOT / "public" / "assets" / "sprites" / "kurisu"
 SPRI_RESOURCE_URL = "https://www.spriters-resource.com/pc_computer/steinsgate0/asset/108143/"
 
-def find_candidate_zips_in_downloads():
-    """Search the user's Downloads folder for potential sprite archives."""
-    candidates = []
-    downloads_path = Path.home() / "Downloads"
-    if downloads_path.exists():
-        patterns = ["*108143*.zip", "*kurisu*.zip", "*steins*gate*.zip", "*amadeus*.zip"]
-        for pattern in patterns:
-            for p in downloads_path.glob(pattern):
-                if p not in candidates and p.is_file():
-                    candidates.append(p)
-    return candidates
 
 def import_from_archive_or_dir(source_path: Path):
     """Import PNG files from a zip archive or directory into SPRITES_DIR."""
@@ -136,12 +125,6 @@ def main():
         print("     python scripts/setup_sprites.py --import \"C:\\caminho\\para\\arquivo.zip\"")
         print()
 
-        candidates = find_candidate_zips_in_downloads()
-        if candidates:
-            print("[*] Arquivo(s) potencial(is) detectado(s) na sua pasta Downloads:")
-            for cand in candidates:
-                print(f"     python scripts/setup_sprites.py --import \"{cand}\"")
-            print()
 
         print("4. Reinicie a interface web (npm run dev) após a importação.")
         print("-" * 70)
