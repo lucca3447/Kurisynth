@@ -64,6 +64,21 @@ class TestQwenTTS(unittest.TestCase):
         self.assertIn(custom, instruct_custom)
         self.assertIn("som seco e direto sem eco", instruct_custom)
 
+    def test_clean_text_for_tts(self):
+        from app.services.voice_service import clean_text_for_tts
+
+        # Interrobangs replaced by ?
+        raw1 = "O que você disse?! Não pode ser!? Sério?!!"
+        self.assertEqual(clean_text_for_tts(raw1), "O que você disse? Não pode ser? Sério?")
+
+        # Multiple exclamation marks reduced to .
+        raw2 = "Idiota!! Cale a boca!!!"
+        self.assertEqual(clean_text_for_tts(raw2), "Idiota. Cale a boca.")
+
+        # Preserves natural ellipses pause and strips emotion comments
+        raw3 = "<!-- emotion: tsundere --> Não é como se... eu me importasse com você! Idiota!!"
+        self.assertEqual(clean_text_for_tts(raw3), "Não é como se... eu me importasse com você! Idiota.")
+
     def test_python_executable_discovery(self):
         py_exe = QwenTTSManager.get_python_executable()
         self.assertIsNotNone(py_exe)

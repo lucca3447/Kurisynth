@@ -2,7 +2,7 @@ import os
 import sys
 import subprocess
 import asyncio
-from typing import Optional
+from typing import Optional, Tuple, AsyncGenerator
 import httpx
 
 from .emotion_mapper import resolve_acoustic_instruct
@@ -28,6 +28,7 @@ WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
 
 _worker_process: Optional[subprocess.Popen] = None
 _spawn_lock = asyncio.Lock()
+_client: Optional[httpx.AsyncClient] = None
 
 
 def is_port_in_use(port: Optional[int] = None) -> bool:
@@ -60,6 +61,16 @@ def kill_process_on_port(port: Optional[int] = None):
 
 
 class QwenTTSManager:
+    @classmethod
+    def get_client(cls) -> httpx.AsyncClient:
+        global _client
+        if _client is None or _client.is_closed:
+            _client = httpx.AsyncClient(
+                timeout=httpx.Timeout(90.0, connect=5.0, read=90.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+            )
+        return _client
+
     @classmethod
     def get_python_executable(cls) -> Optional[str]:
         for candidate in CANDIDATE_PYTHONS:
@@ -107,29 +118,29 @@ class QwenTTSManager:
         import time
         t0 = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.get(f"{url}/health")
-                ping_ms = round((time.perf_counter() - t0) * 1000, 1)
-                if res.status_code == 200:
-                    data = res.json()
-                    return {
-                        "status": data.get("status", "unknown"),
-                        "device": data.get("device", "unknown"),
-                        "vram_allocated_mb": data.get("vram_allocated_mb"),
-                        "ping_ms": ping_ms,
-                        "url": url,
-                        "mode": "remote" if cls.is_remote_url(url) else "local",
-                        "error": None,
-                    }
+            client = cls.get_client()
+            res = await client.get(f"{url}/health", timeout=4.0)
+            ping_ms = round((time.perf_counter() - t0) * 1000, 1)
+            if res.status_code == 200:
+                data = res.json()
                 return {
-                    "status": "error",
-                    "device": None,
-                    "vram_allocated_mb": None,
+                    "status": data.get("status", "unknown"),
+                    "device": data.get("device", "unknown"),
+                    "vram_allocated_mb": data.get("vram_allocated_mb"),
                     "ping_ms": ping_ms,
                     "url": url,
                     "mode": "remote" if cls.is_remote_url(url) else "local",
-                    "error": f"HTTP {res.status_code}: {res.text[:100]}",
+                    "error": None,
                 }
+            return {
+                "status": "error",
+                "device": None,
+                "vram_allocated_mb": None,
+                "ping_ms": ping_ms,
+                "url": url,
+                "mode": "remote" if cls.is_remote_url(url) else "local",
+                "error": f"HTTP {res.status_code}: {res.text[:100]}",
+            }
         except Exception as e:
             ping_ms = round((time.perf_counter() - t0) * 1000, 1)
             return {
@@ -146,11 +157,11 @@ class QwenTTSManager:
     async def is_worker_healthy(cls, target_url: Optional[str] = None) -> bool:
         url = (target_url or cls.resolve_target_url()).rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.get(f"{url}/health")
-                if res.status_code == 200:
-                    data = res.json()
-                    return data.get("status") == "ready"
+            client = cls.get_client()
+            res = await client.get(f"{url}/health", timeout=1.5)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("status") == "ready"
         except Exception:
             pass
         return False
@@ -200,11 +211,11 @@ class QwenTTSManager:
     async def get_worker_status(cls, target_url: Optional[str] = None) -> Optional[str]:
         url = (target_url or cls.resolve_target_url()).rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                res = await client.get(f"{url}/health")
-                if res.status_code == 200:
-                    data = res.json()
-                    return data.get("status")
+            client = cls.get_client()
+            res = await client.get(f"{url}/health", timeout=2.0)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("status")
         except Exception:
             pass
         return None
@@ -286,23 +297,81 @@ class QwenTTSManager:
 
         try:
             print(f"[Qwen3 Manager] Dispatching synthesis to {target_url} (chars: {len(text)})...")
-            # Remote requests over Cloudflare tunnel may need a generous timeout (up to 90s)
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                res = await client.post(
-                    f"{target_url}/synthesize",
-                    json={
-                        "text": text,
-                        "language": language or "Portuguese",
-                        "instruct": instruct,
-                    },
-                )
-                if res.status_code == 200:
-                    return res.content
-                print(f"[Qwen3 Manager] Worker at {target_url} returned error {res.status_code}: {res.text[:150]}")
+            client = cls.get_client()
+            res = await client.post(
+                f"{target_url}/synthesize",
+                json={
+                    "text": text,
+                    "language": language or "Portuguese",
+                    "instruct": instruct,
+                },
+                timeout=90.0,
+            )
+            if res.status_code == 200:
+                return res.content
+            print(f"[Qwen3 Manager] Worker at {target_url} returned error {res.status_code}: {res.text[:150]}")
         except httpx.TimeoutException:
             print(f"[Qwen3 Manager] Synthesis timed out after 90s at {target_url} (utterance: {len(text)} chars).")
         except Exception as e:
             print(f"[Qwen3 Manager] Communication error with {target_url}: {e}")
 
         return None
+
+    @classmethod
+    async def synthesize_stream(
+        cls,
+        text: str,
+        emotion: Optional[str] = None,
+        custom_instruct: Optional[str] = None,
+        language: str = "Portuguese",
+        qwen_mode: Optional[str] = "remote",
+        qwen_remote_url: Optional[str] = None,
+    ) -> Tuple[str, AsyncGenerator[bytes, None]]:
+        """
+        Synthesizes speech using streaming chunked transfer from Qwen3-TTS worker.
+        Yields raw PCM16 (audio/L16;rate=24000) chunks as they are generated by CUDA graphs.
+        """
+        target_url = cls.resolve_target_url(qwen_mode=qwen_mode, custom_url=qwen_remote_url)
+        is_remote = cls.is_remote_url(target_url)
+
+        print(f"[Qwen3 Manager] Selected streaming target: {target_url} (mode: {'remote' if is_remote else 'local'})")
+
+        if is_remote:
+            is_healthy = await cls.is_worker_healthy(target_url)
+            if not is_healthy:
+                raise RuntimeError(f"Remote Qwen3 worker at {target_url} is unreachable or not ready.")
+        else:
+            is_healthy = await cls.ensure_worker(max_wait_sec=150.0, target_url=target_url)
+            if not is_healthy:
+                raise RuntimeError("Local Qwen3 worker offline or initialization timed out.")
+
+        instruct = resolve_acoustic_instruct(emotion=emotion, custom_instruct=custom_instruct)
+        client = cls.get_client()
+
+        async def _stream_generator() -> AsyncGenerator[bytes, None]:
+            req = client.build_request(
+                "POST",
+                f"{target_url}/synthesize_stream",
+                json={
+                    "text": text,
+                    "language": language or "Portuguese",
+                    "instruct": instruct,
+                },
+                timeout=httpx.Timeout(90.0, connect=5.0, read=90.0),
+            )
+            res = await client.send(req, stream=True)
+            if res.status_code != 200:
+                body = await res.aread()
+                await res.aclose()
+                raise RuntimeError(f"Worker streaming error {res.status_code}: {body.decode('utf-8', errors='ignore')}")
+
+            try:
+                async for chunk in res.aiter_bytes():
+                    if chunk:
+                        yield chunk
+            finally:
+                await res.aclose()
+
+        return "audio/L16;rate=24000", _stream_generator()
+
 

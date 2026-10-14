@@ -26,7 +26,15 @@ async def text_to_speech(req: TTSRequest):
         emotion=req.emotion,
         instruct=req.instruct,
     )
-    return StreamingResponse(audio_stream, media_type=content_type)
+    headers = {
+        "X-Accel-Buffering": "no",
+        "Cache-Control": "no-cache",
+    }
+    if "L16" in content_type:
+        headers["X-Audio-Format"] = "pcm_s16le"
+        headers["X-Sample-Rate"] = "24000"
+
+    return StreamingResponse(audio_stream, media_type=content_type, headers=headers)
 
 
 @router.post("/voice/ping", response_model=QwenWorkerStatus)

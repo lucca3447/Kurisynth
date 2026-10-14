@@ -1,21 +1,21 @@
 from typing import Optional
 
-# Base acoustic anchor: studio recording, dry sound without echo, Brazilian Portuguese
-STUDIO_ACOUSTIC_BASE = "Português brasileiro, som seco e direto sem eco ou reverberação de sala. "
+# Base acoustic anchor: studio recording, dry sound without echo, Brazilian Portuguese, mid-low composed pitch
+STUDIO_ACOUSTIC_BASE = "Português brasileiro, som seco e direto sem eco, voz feminina média-baixa límpida e postura contida. "
 
 EMOTION_INSTRUCT_MAP = {
     # Core Persona States
     "tsundere": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom tsundere, voz jovem e emotiva da Kurisu, fingindo irritação mas envergonhada, com oscilação expressiva e afeto contido."
+        + "Tom tsundere contido, voz média-baixa da Kurisu, fingindo irritação de forma sarcástica mas secretamente envergonhada, postura composta e sem gritar."
     ),
     "flustered": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom tímido e muito envergonhado, pega de surpresa, voz fofa e hesitante."
+        + "Tom tímido e reservado, pega de surpresa, voz hesitante e envergonhada, disfarçando o embaraço sem elevar o tom."
     ),
     "blushing": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom envergonhado e constrangido, voz mais baixa e tímida, tentando disfarçar a vergonha."
+        + "Tom envergonhado e constrangido, voz mais baixa, suave e contida, disfarçando timidez."
     ),
     "smile": (
         STUDIO_ACOUSTIC_BASE
@@ -23,19 +23,19 @@ EMOTION_INSTRUCT_MAP = {
     ),
     "happy": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom alegre, caloroso e animado, dicção límpida e bem disposta."
+        + "Tom alegre, caloroso e animado, dicção límpida e bem disposta, voz moderada."
     ),
     "neutral": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom inteligente, articulado, curioso e analítico de pesquisadora."
+        + "Tom inteligente, articulado, curioso e analítico de pesquisadora, dicção limpa e natural."
     ),
     "serious": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom sério, firme e focado em raciocínio lógico."
+        + "Tom sério, firme e focado em raciocínio lógico, postura sóbria."
     ),
     "analytical": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom acadêmico, didático e reflexivo, expondo fatos com clareza."
+        + "Tom acadêmico, didático e reflexivo, expondo fatos com clareza objetiva."
     ),
     "thinking": (
         STUDIO_ACOUSTIC_BASE
@@ -43,19 +43,19 @@ EMOTION_INSTRUCT_MAP = {
     ),
     "annoyed": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom impaciente e indignado, voz cortante e firme, fingindo braveza."
+        + "Tom levemente irritado e sarcástico, voz média-baixa cortante e firme com ar de superioridade, sem gritar ou elevar a voz."
     ),
     "stern": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom austero, repreensivo, direto e seguro."
+        + "Tom austero, repreensivo, direto, calmo e seguro."
     ),
     "smug": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom confiante, irônico e inteligente, com leve ar de superioridade divertida."
+        + "Tom confiante, irônico, sarcástico e inteligente, com leve ar de superioridade divertida e controlada."
     ),
     "disdain": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom irônico, descontraído, com leve desdém intelectual."
+        + "Tom irônico e composto, voz média-baixa com leve desdém intelectual controlado."
     ),
     "puzzled": (
         STUDIO_ACOUSTIC_BASE
@@ -63,7 +63,7 @@ EMOTION_INSTRUCT_MAP = {
     ),
     "worried": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom cauteloso e apreensivo, voz atenta e cuidadosa."
+        + "Tom cauteloso e apreensivo, voz atenta e cuidadosa em tom médio."
     ),
     "sad": (
         STUDIO_ACOUSTIC_BASE
@@ -75,7 +75,7 @@ EMOTION_INSTRUCT_MAP = {
     ),
     "desperate": (
         STUDIO_ACOUSTIC_BASE
-        + "Tom apreensivo e urgente, mas compreensível."
+        + "Tom apreensivo e urgente, porém contido e focado, voz firme sem gritar."
     ),
     "wink": (
         STUDIO_ACOUSTIC_BASE
