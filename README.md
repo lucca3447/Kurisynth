@@ -143,11 +143,22 @@ Switch between voice engines dynamically at runtime via the in-app **Settings Mo
           └── rmvpe.pt
   ```
 
-### 3. Visual Novel Sprite Pack Verification (Optional)
-To respect intellectual property, commercial *Steins;Gate* sprites are not tracked in Git. OpenAmadeus renders a procedural holographic silhouette out-of-the-box. To enable the full 174-sprite visual pack locally, place your `.png` assets in `public/assets/sprites/kurisu/` and verify with:
+### 3. Visual Novel Sprite Pack Setup (Optional)
+To respect intellectual property, commercial *Steins;Gate* game assets are not distributed in this repository. OpenAmadeus includes a fully functional **procedural holographic silhouette** (`CyberHologramCanvas`) out of the box, requiring zero external assets.
+
+If you wish to enable the authentic 174-sprite visual novel expressions locally:
+- **Method A (Official Steam Extraction)**: Extract `chara.mpk` from your purchased Steam/GOG copy of *Steins;Gate 0* using open-source extraction tools such as [GARbro](https://github.com/morkt/GARbro).
+- **Method B (Community Preservation Reference)**: Consult the educational sprite sheet archive on [The Spriters Resource (Asset #108143)](https://www.spriters-resource.com/pc_computer/steinsgate0/asset/108143/).
+
+To automatically unpack and verify your assets into `public/assets/sprites/kurisu/`, run:
 ```bash
+# Automated import from a downloaded .zip or folder:
+python scripts/setup_sprites.py --import "path/to/archive.zip"
+
+# Or verify existing assets in public/assets/sprites/kurisu/:
 python scripts/setup_sprites.py
 ```
+
 
 ## 🚀 Quick Start Guide
 
