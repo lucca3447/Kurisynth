@@ -93,9 +93,13 @@ export class SpeechService {
   private static recognition: any = null;
   private static isListening = false;
 
-  // Web Audio API singletons for lip-sync and oscilloscope
+  // Web Audio API singletons for lip-sync, compression, and oscilloscope
   private static audioCtx: AudioContext | null = null;
   private static analyser: AnalyserNode | null = null;
+  private static makeUpGain: GainNode | null = null;
+  private static compressor: DynamicsCompressorNode | null = null;
+  private static masterGain: GainNode | null = null;
+  private static activeSources: Set<AudioBufferSourceNode> = new Set();
   private static neuralAudio: HTMLAudioElement | null = null;
   private static audioSourceConnected = false;
   private static isSpeakingAudio = false;
@@ -220,20 +224,54 @@ export class SpeechService {
   }
 
   /**
-   * Ensures Web Audio API context and analyser node are active
+   * Ensures Web Audio API context and processing chain (makeUpGain -> compressor -> masterGain -> analyser -> destination)
    */
-  private static ensureAudioContext(): { ctx: AudioContext; analyser: AnalyserNode } {
+  private static ensureAudioContext(): {
+    ctx: AudioContext;
+    analyser: AnalyserNode;
+    makeUpGain: GainNode;
+    compressor: DynamicsCompressorNode;
+    masterGain: GainNode;
+  } {
     if (!this.audioCtx) {
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioCtx = new AudioCtxClass();
+
+      // Make-up gain (1.5x) to elevate quieter speech segments before compression
+      this.makeUpGain = this.audioCtx.createGain();
+      this.makeUpGain.gain.value = 1.5;
+
+      // Dynamics compressor to gently tame emphatic peaks while maintaining consistency
+      this.compressor = this.audioCtx.createDynamicsCompressor();
+      this.compressor.threshold.setValueAtTime(-18, this.audioCtx.currentTime);
+      this.compressor.knee.setValueAtTime(12, this.audioCtx.currentTime);
+      this.compressor.ratio.setValueAtTime(3.5, this.audioCtx.currentTime);
+      this.compressor.attack.setValueAtTime(0.003, this.audioCtx.currentTime);
+      this.compressor.release.setValueAtTime(0.25, this.audioCtx.currentTime);
+
+      this.masterGain = this.audioCtx.createGain();
+      this.masterGain.gain.value = 1.0;
+
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 256;
       this.analyser.smoothingTimeConstant = 0.65;
+
+      // Audio Graph routing
+      this.makeUpGain.connect(this.compressor);
+      this.compressor.connect(this.masterGain);
+      this.masterGain.connect(this.analyser);
+      this.analyser.connect(this.audioCtx.destination);
     }
     if (this.audioCtx.state === 'suspended') {
       this.audioCtx.resume().catch(() => {});
     }
-    return { ctx: this.audioCtx, analyser: this.analyser! };
+    return {
+      ctx: this.audioCtx,
+      analyser: this.analyser!,
+      makeUpGain: this.makeUpGain!,
+      compressor: this.compressor!,
+      masterGain: this.masterGain!,
+    };
   }
 
   /**
@@ -382,6 +420,14 @@ export class SpeechService {
       throw new Error(`TTS endpoint returned ${res.status}`);
     }
 
+    const contentType = res.headers.get('content-type') || '';
+    const audioFormat = res.headers.get('x-audio-format') || '';
+    const isPcmStream = contentType.includes('audio/L16') || audioFormat === 'pcm_s16le';
+
+    if (isPcmStream && res.body) {
+      return this.playPcmStream(res.body, options, abortCtrl.signal);
+    }
+
     const blob = await res.blob();
     if (abortCtrl.signal.aborted) return;
     const audioUrl = URL.createObjectURL(blob);
@@ -393,13 +439,14 @@ export class SpeechService {
 
     const audio = this.neuralAudio;
     audio.src = audioUrl;
-    audio.volume = options.volume ?? 1.0;
+    audio.volume = 1.0;
+    const { makeUpGain, masterGain } = this.ensureAudioContext();
+    masterGain.gain.setValueAtTime(options.volume ?? 1.0, ctx.currentTime);
 
     if (!this.audioSourceConnected) {
       try {
         const sourceNode = ctx.createMediaElementSource(audio);
-        sourceNode.connect(analyser);
-        analyser.connect(ctx.destination);
+        sourceNode.connect(makeUpGain);
         this.audioSourceConnected = true;
       } catch (e) {
         console.warn('[SpeechService] Audio source connection note:', e);
@@ -434,6 +481,125 @@ export class SpeechService {
         reject(err);
       });
     });
+  }
+
+  /**
+   * Streams raw PCM 16-bit 24kHz audio via Web Audio API AudioBufferSourceNodes.
+   * Features:
+   * - Remainder byte buffer handling for odd-sized network chunks
+   * - 120ms initial jitter buffer to prevent network underrun
+   * - GainNode (1.5x) + DynamicsCompressorNode volume normalization
+   * - Continuous C0 lip-sync monitoring and exact onStart/onEnd lifecycle
+   */
+  private static async playPcmStream(
+    body: ReadableStream<Uint8Array>,
+    options: SpeakOptions,
+    signal: AbortSignal
+  ): Promise<void> {
+    const { ctx, makeUpGain, masterGain } = this.ensureAudioContext();
+    masterGain.gain.setValueAtTime(options.volume ?? 1.0, ctx.currentTime);
+
+    const reader = body.getReader();
+    let remainder: Uint8Array | null = null;
+    let nextStartTime = 0;
+    const JITTER_BUFFER_SEC = 0.12;
+    let hasStarted = false;
+
+    try {
+      while (true) {
+        if (signal.aborted) {
+          reader.cancel().catch(() => {});
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.length === 0) continue;
+
+        // 1. Concatenate leftover byte from previous chunk if present
+        let chunk: Uint8Array;
+        if (remainder && remainder.length > 0) {
+          chunk = new Uint8Array(remainder.length + value.length);
+          chunk.set(remainder, 0);
+          chunk.set(value, remainder.length);
+          remainder = null;
+        } else {
+          chunk = value;
+        }
+
+        // 2. Handle odd byte boundary: preserve 1 remainder byte for next network read
+        if (chunk.length % 2 !== 0) {
+          remainder = chunk.slice(chunk.length - 1);
+          chunk = chunk.subarray(0, chunk.length - 1);
+        }
+
+        if (chunk.length === 0) continue;
+
+        // 3. Convert PCM16 LE to Float32 [-1.0, 1.0] using DataView to bypass alignment restrictions
+        const numSamples = chunk.length / 2;
+        const float32 = new Float32Array(numSamples);
+        const dataView = new DataView(chunk.buffer, chunk.byteOffset, chunk.length);
+        for (let i = 0; i < numSamples; i++) {
+          const sample = dataView.getInt16(i * 2, true);
+          float32[i] = sample < 0 ? sample / 32768 : sample / 32767;
+        }
+
+        // 4. Create AudioBuffer (24kHz Mono)
+        const audioBuffer = ctx.createBuffer(1, numSamples, 24000);
+        audioBuffer.copyToChannel(float32, 0);
+
+        // 5. Schedule source node seamlessly
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(makeUpGain);
+
+        const now = ctx.currentTime;
+        if (nextStartTime <= now) {
+          nextStartTime = now + JITTER_BUFFER_SEC;
+        }
+
+        source.start(nextStartTime);
+        this.activeSources.add(source);
+
+        source.onended = () => {
+          this.activeSources.delete(source);
+        };
+
+        if (!hasStarted) {
+          hasStarted = true;
+          this.isSpeakingAudio = true;
+          this.startLipSyncMonitoring();
+          options.onStart?.();
+        }
+
+        nextStartTime += audioBuffer.duration;
+      }
+
+      // Wait until all scheduled audio buffers have finished playing
+      if (hasStarted) {
+        const remainingSec = Math.max(0, nextStartTime - ctx.currentTime);
+        if (remainingSec > 0 && !signal.aborted) {
+          await new Promise<void>((resolve) => {
+            const timeoutId = window.setTimeout(resolve, remainingSec * 1000);
+            signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeoutId);
+                resolve();
+              },
+              { once: true }
+            );
+          });
+        }
+      }
+    } finally {
+      reader.releaseLock();
+      if (hasStarted) {
+        this.isSpeakingAudio = false;
+        this.notifyLipSync(false, 0);
+        options.onEnd?.();
+      }
+    }
   }
 
   /**
@@ -503,6 +669,14 @@ export class SpeechService {
 
     this.isSpeakingAudio = false;
     this.notifyLipSync(false, 0);
+
+    for (const source of this.activeSources) {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch {}
+    }
+    this.activeSources.clear();
 
     if (this.simulatedLipSyncTimeout) {
       clearTimeout(this.simulatedLipSyncTimeout);
