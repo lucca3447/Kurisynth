@@ -64,6 +64,17 @@ class TestQwenTTS(unittest.TestCase):
         self.assertIn(custom, instruct_custom)
         self.assertIn("som seco e direto sem eco", instruct_custom)
 
+        # Test full 21 emotion mapping completeness and acoustic targets
+        from app.services.qwen_tts.emotion_mapper import EMOTION_ACOUSTIC_TARGETS
+        self.assertEqual(len(EMOTION_INSTRUCT_MAP), 21)
+        self.assertEqual(len(EMOTION_ACOUSTIC_TARGETS), 21)
+        for emo in EMOTION_INSTRUCT_MAP:
+            self.assertIn(emo, EMOTION_ACOUSTIC_TARGETS)
+            target = EMOTION_ACOUSTIC_TARGETS[emo]
+            self.assertGreater(target["f0_hz"], 180.0)
+            self.assertLess(target["f0_hz"], 600.0)
+            self.assertGreater(target["rms"], 0.01)
+
     def test_clean_text_for_tts(self):
         from app.services.voice_service import clean_text_for_tts
 
