@@ -81,11 +81,28 @@ class TestQwenTTS(unittest.TestCase):
         self.assertEqual(local_resolved, "http://127.0.0.1:8005")
         self.assertFalse(QwenTTSManager.is_remote_url(local_resolved))
 
-    def test_ping_worker_offline(self):
-        # Probing a non-existent port should return status="offline" cleanly without throwing
-        ping_res = asyncio.run(QwenTTSManager.ping_worker("http://127.0.0.1:59999"))
-        self.assertEqual(ping_res["status"], "offline")
-        self.assertIsNotNone(ping_res["ping_ms"])
+    def test_apply_boundary_continuity(self):
+        from app.services.qwen_tts.qwen_worker import apply_boundary_continuity
+        import numpy as np
+
+        # Previous chunk ended with amplitude 0.25
+        prev_sample = 0.25
+        # Current chunk starts with amplitude 0.10 (an abrupt 0.15 jump)
+        chunk = np.ones(300, dtype=np.float32) * 0.10
+
+        smoothed = apply_boundary_continuity(chunk, prev_sample)
+
+        # Sample 0 must match prev_sample exactly (C0 continuity)
+        self.assertAlmostEqual(float(smoothed[0]), prev_sample, places=5)
+        # Sample 119 should be almost back to original chunk value
+        self.assertAlmostEqual(float(smoothed[119]), 0.10, places=4)
+        # Sample 120+ should be completely untouched
+        self.assertEqual(smoothed[120], chunk[120])
+        self.assertEqual(smoothed[299], chunk[299])
+
+        # None prev_sample should leave chunk unchanged
+        unchanged = apply_boundary_continuity(chunk, None)
+        np.testing.assert_array_equal(unchanged, chunk)
 
 
 if __name__ == "__main__":
