@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OpenAmadeus Remote Qwen3-TTS Worker",
-    version="1.0.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 

@@ -1,52 +1,63 @@
-# 🧠 Amadeus Backend (FastAPI + ChromaDB + Neural Voice Engines)
+# 🧠 OpenAmadeus Backend Core (`v0.1.0`)
 
-High-performance Python backend server for the **Amadeus System**, orchestrating continuous episodic memory (RAG), psychological persona simulation, and neural speech synthesis with optional GPU-accelerated acoustic voice conversion.
+High-performance Python backend server for the **Amadeus System**, orchestrating continuous episodic memory (RAG), psychological persona simulation, multi-provider LLM routing, and a 4-stage neural voice cascade with CUDA Graphs acceleration.
 
 ---
 
-## ⚡ Architecture Overview
+## ⚡ Architecture Overview & Voice Cascade
 
-The backend is built as a modular, decoupled multi-service pipeline:
+The backend operates as a decoupled, fault-tolerant multi-service pipeline:
 
-```
-[ Frontend Client (React 19) ]
-       │ HTTP /api/chat & /api/tts
+```text
+[ Frontend Client (React 19 / TypeScript / Vite) ]
+       │ HTTP /api/chat & /api/tts (Streaming PCM16 / WAV / MP3)
        ▼
 [ FastAPI Core Server (:8000) ] ──── (Hybrid RAG: ChromaDB + SQLite)
        │
-       ├──► Engine 1: Edge-TTS (Default / Universal / CPU-Only)
-       │         └── Microsoft Azure Neural Cloud (pt-BR-FranciscaNeural, Nanami, etc.)
+       ├──► Stage 1: Kurisu Qwen3-TTS 1.7B (:8005 or Colab Cloudflare Tunnel)
+       │         ├── Accelerated via faster-qwen3-tts (Static KV Cache + CUDA Graphs)
+       │         ├── Latency: ~391 ms TTFA | Speed: 1.92x RTF (NVIDIA L4)
+       │         ├── Output: Raw PCM16 streaming (audio/L16;rate=24000)
+       │         └── DSP: 120-sample (5 ms) C0 boundary continuity ramp + text sanitization
        │
-       ├──► Engine 2: Kurisu RVC v2 Pipeline (:8001) [Optional GPU FP16]
-       │         ├── Source: https://huggingface.co/FrancescoCaracciolo/Kurisu-RVC
-       │         └── Asami Imai Original Voice Timbre (KurisuRVCv147)
+       ├──► Stage 2: Kokoro-TTS 82M (Local Offline CPU/GPU)
+       │         ├── Model: Kokoro-82M (lang_code='p', voice='pf_dora')
+       │         ├── Latency: ~80–150 ms | Footprint: ~350 MB RAM/VRAM
+       │         └── Optional: Morph speech timbre with Kurisu RVC v2
        │
-       └──► Engine 3: Kurisu Qwen3-TTS Worker (:8002) [Optional GPU BF16]
-                 ├── Source: https://huggingface.co/starrydark/Kurisu_Qwen3_TTS
-                 └── Direct End-to-End Neural Synthesis (1.7B Parameters)
+       ├──► Stage 3: Microsoft Edge-TTS (Universal Zero-Setup Cloud CPU)
+       │         ├── Voices: pt-BR-FranciscaNeural, ja-JP-NanamiNeural
+       │         ├── Footprint: 0 MB local weights, runs on ANY hardware
+       │         └── Optional: Morph speech timbre with Kurisu RVC v2
+       │
+       └──► Stage 4: Browser Web Speech API Fallback
+                 └── Automatic client-side fallback with syllable lip-sync
 ```
 
+### Key Subsystems:
 1. **FastAPI Core Gateway (`:8000`)**:
-   - Hybrid RAG memory engine using **ChromaDB** (semantic vector embeddings) and **SQLite** (sessions, chat history, and emotional sentiment tags).
-   - Multi-provider LLM orchestration (Groq Cloud LPU Llama 3.3 70B, Google Gemini 2.5 Flash, OpenRouter) and a local deterministic offline simulator.
-   - Resilient voice router (`voice_service.py`) providing automated health probing and instant fallback between engines.
-
-2. **Universal Compatibility by Default (Runs on ANY Machine)**:
-   - **No GPU Required**: By default, Amadeus synthesizes speech using Microsoft Edge-TTS. It runs out-of-the-box on standard desktop PCs, laptops, Windows, macOS, or Linux without downloading gigabytes of model weights or requiring an NVIDIA graphics card.
-   - **Optional GPU Acceleration**: Operators with modern NVIDIA graphics cards (GTX 16-series, RTX 20/30/40 series, or any GPU with 4GB+ VRAM) can optionally enable local Kurisu RVC v2 conversion or the resident Qwen3-TTS worker for maximum voice fidelity.
+   - **Hybrid RAG Memory Engine**: Persistent **ChromaDB** (`server/data/memory_db`) storing semantic embeddings and 63 curated ChatML dialogue exemplars (`server/training/kurisu_finetuning_dataset_enhanced.jsonl`), coupled with **SQLite** (`server/data/amadeus.db`) for multi-turn session persistence.
+   - **Multi-Provider LLM Orchestrator**: Dynamic routing across **Google Gemini** (`gemini-2.5-flash`), **Groq Cloud LPU** (`llama-3.3-70b-versatile`, `qwen/qwen3.8-27b`), **OpenRouter Free Tier** (`google/gemma-4-31b-it:free`, `nvidia/nemotron-3.5-lightning:free`), and a local deterministic **Heuristic Offline Simulator** (`offline_simulator.py`).
+   - **Voice Service (`voice_service.py`)**: 4-stage automated fallback cascade with health diagnostics, round-trip pinging, and text sanitization (`clean_text_for_tts`).
 
 ---
 
-## 📦 Neural Voice Models & Download Directory
+## 🎙️ Neural Voice Models & Asset Setup
 
-### 1. Kurisu RVC v2 (Timbre Conversion) — [Optional GPU Acceleration]
-* **Hugging Face Repository**: [FrancescoCaracciolo/Kurisu-RVC](https://huggingface.co/FrancescoCaracciolo/Kurisu-RVC/tree/main)
+### 1. Kurisu Qwen3-TTS 1.7B (End-to-End Neural Streaming)
+* **Hugging Face Repository**: [starrydark/Kurisu_Qwen3_TTS](https://huggingface.co/starrydark/Kurisu_Qwen3_TTS)
+* **Acceleration Engine**: [faster-qwen3-tts](https://github.com/andimarafioti/faster-qwen3-tts) (CUDA Graphs + Static KV Cache).
+* **Automatic Download**: Weights (~3.8 GB) download automatically on first startup via Hugging Face Hub into `~/.cache/huggingface/hub/`.
+* **Manual Offline Clone (Optional)**:
+  ```bash
+  git lfs install
+  git clone https://huggingface.co/starrydark/Kurisu_Qwen3_TTS server/weights/kurisu_qwen3
+  ```
+
+### 2. Kurisu RVC v2 (Timbre Morphing)
+* **Hugging Face Repository**: [FrancescoCaracciolo/Kurisu-RVC](https://huggingface.co/FrancescoCaracciolo/Kurisu-RVC)
 * **Voice Reference**: Asami Imai (今井 麻美) — Official Japanese voice actress for Makise Kurisu.
-* **Required Files**:
-  * `KurisuRVCv147.pth` (RVC generator weights)
-  * `KurisuRVCv147.index` (Faiss feature retrieval index)
-* **Directory Structure**:
-  Place the downloaded weights inside `server/weights/kurisu_rvc/`:
+* **Weights Directory Layout**:
   ```text
   server/
   └── weights/
@@ -58,62 +69,48 @@ The backend is built as a modular, decoupled multi-service pipeline:
           └── rmvpe.pt
   ```
 
-### 2. Kurisu Qwen3-TTS (Direct End-to-End Voice) — [Optional GPU Acceleration]
-* **Hugging Face Repository**: [starrydark/Kurisu_Qwen3_TTS](https://huggingface.co/starrydark/Kurisu_Qwen3_TTS)
-* **Base Architecture**: Alibaba Cloud Qwen3-TTS 1.7B
-* **Model Download Options**:
-  * **Automatic Download (Recommended)**: Weights (~3.5 GB) are automatically fetched on first startup via Hugging Face Hub into `~/.cache/huggingface/hub/`.
-  * **Manual Clone (Offline Alternative)**: Clone into `server/weights/kurisu_qwen3/`:
-    ```bash
-    git lfs install
-    git clone https://huggingface.co/starrydark/Kurisu_Qwen3_TTS server/weights/kurisu_qwen3
-    ```
-    The worker automatically checks for `server/weights/kurisu_qwen3/` before attempting remote downloads.
-* **Requirements & Notes**: Requires modern NVIDIA GPU (4GB+ VRAM, CUDA 12.4). The `Warning: flash-attn is not installed` message during startup is harmless; PyTorch native SDPA kernel is used for inference.
-
-### 3. Microsoft Edge-TTS — [Universal / Zero Setup]
-* **Cost & Configuration**: 100% Free, requires no API keys and 0 MB of local weight downloads.
-* **Supported Voices**: `pt-BR-FranciscaNeural` (Natural & Expressive), `pt-BR-ThalitaNeural` (Young & Fast), and `ja-JP-NanamiNeural` (Anime Original).
+### 3. Kokoro-TTS 82M & Microsoft Edge-TTS
+* **Kokoro-TTS**: 82M open-weight model (`kokorottsai.com`), providing instant offline synthesis.
+* **Edge-TTS**: Zero configuration required, 100% free cloud neural synthesis.
 
 ---
 
-## 🛠️ Step-by-Step Local Setup
+## 🛠️ Installation & Execution
 
-### 1. Core Server Setup (Works on ANY PC)
+### 1. Core Server Setup (Universal — Any Machine)
 
 ```powershell
-# Navigate to server directory:
+# Windows (PowerShell):
 cd server
-
-# Create virtual environment:
 python -m venv rvc_env
-
-# Activate virtual environment:
-# On Windows (PowerShell):
 .\rvc_env\Scripts\Activate.ps1
-# On Linux / macOS:
-source rvc_env/bin/activate
-
-# Install dependencies:
 pip install -r requirements.txt
+python main.py  # or: python -m uvicorn main:app --reload --port 8000
 
-# Start FastAPI server on port 8000:
-python -m uvicorn main:app --reload --port 8000
+# Linux / macOS:
+cd server
+python3 -m venv rvc_env
+source rvc_env/bin/activate
+pip install -r requirements.txt
+python main.py  # or: python -m uvicorn main:app --reload --port 8000
 ```
-Interactive OpenAPI documentation will be accessible at `http://localhost:8000/docs`.
+Interactive OpenAPI / Swagger docs are available at `http://localhost:8000/docs`.
 
 ---
 
-### 2. Optional: Launching the Qwen3-TTS Worker (NVIDIA GPU Only)
+### 2. Real-Time Qwen3-TTS Execution
 
-If you have an NVIDIA GPU with CUDA 12.4 and wish to run the end-to-end Kurisu voice:
+#### Option A: Google Colab Remote GPU Worker (Recommended)
+1. Open `notebooks/Amadeus_Qwen3_TTS_Colab.ipynb` in Google Colab (select **NVIDIA L4** or **A100**).
+2. Run all cells to install pinned dependencies (`transformers==5.15.1`, `faster-qwen3-tts`), capture CUDA Graphs, and expose the Cloudflare Tunnel URL.
+3. Configure the public URL in OpenAmadeus Settings (⚙️) or set `QWEN_REMOTE_URL` in `server/.env`.
 
+#### Option B: Local NVIDIA GPU Worker (`:8005`)
 ```powershell
 # Windows (PowerShell):
 cd server
 python -m venv qwen_env
 .\qwen_env\Scripts\Activate.ps1
-pip install torch==2.6.0+cu124 torchaudio==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements-qwen.txt
 python -m app.services.qwen_tts.qwen_worker
 
@@ -121,38 +118,8 @@ python -m app.services.qwen_tts.qwen_worker
 cd server
 python3 -m venv qwen_env
 source qwen_env/bin/activate
-pip install torch==2.6.0+cu124 torchaudio==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements-qwen.txt
 python -m app.services.qwen_tts.qwen_worker
-```
-
-> [!TIP]
-> **Auto-Spawn**: When `qwen_env` exists inside `server/qwen_env`, the core FastAPI backend will automatically auto-spawn the worker process on port `8002` when Kurisu speech is requested.
->
-> **Automatic Fallback**: If the Qwen3 worker is offline or the GPU runs out of VRAM, the core server instantly and transparently falls back to Edge-TTS without interrupting user dialogue.
-
----
-
-## 🐳 Docker Deployment
-
-The backend includes official Docker containerization with persistent data mounting:
-
-```bash
-# Build backend image:
-docker build -t amadeus-backend ./server
-
-# Run backend container:
-docker run -d \
-  -p 8000:8000 \
-  -v "$(pwd)/server/data:/app/data" \
-  -v "$(pwd)/server/weights:/app/weights" \
-  --name amadeus-backend \
-  amadeus-backend
-```
-
-Or spin up the complete full-stack environment from the repository root:
-```bash
-docker compose up -d
 ```
 
 ---
@@ -161,9 +128,21 @@ docker compose up -d
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/health` | `GET` | Health check returning uptime, ChromaDB vector count, and active models |
-| `/api/chat` | `POST` | Core chat route: context injection, RAG semantic search, and LLM orchestration |
-| `/api/tts` | `POST` | Neural voice synthesis (`qwen3` or `edge_rvc`) with WAV/MP3 streaming |
-| `/api/memories` | `GET` / `POST` | Semantic memory management (ChromaDB + SQLite) |
-| `/api/sessions` | `GET` / `POST` | Conversation session persistence |
+| `/api/health` | `GET` | Core gateway health, ChromaDB vector count, and active subsystem status |
+| `/api/chat` | `POST` | Turn execution with RAG exemplars, emotion parsing, and LLM fallback |
+| `/api/tts` | `POST` | Universal speech synthesis (`audio/L16;rate=24000` PCM stream, `audio/wav`, or `audio/mpeg`) |
+| `/api/voice/status` | `GET` | Real-time diagnostics across Remote Qwen3, Local Qwen3 (`:8005`), Kokoro, and RVC v2 |
+| `/api/voice/ping` | `POST` | Probes Qwen3-TTS worker `/health` and measures round-trip latency + VRAM |
+| `/api/voice/models` | `GET` | Lists discovered RVC checkpoints, Kokoro voices, and Edge-TTS voices |
+| `/api/memories` | `GET` / `POST` / `DELETE` | Semantic episodic memory inspection and management |
+| `/api/sessions` | `GET` / `POST` / `DELETE` | Conversation session persistence and history retrieval |
 | `/api/divergence` | `GET` | Live worldline divergence meter telemetry |
+
+---
+
+## 🧪 Automated Testing
+
+Execute the backend test suite:
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
