@@ -42,6 +42,27 @@ def clean_speech_text(text: str) -> str:
     return clean_text
 
 
+def clean_text_for_tts(text: str) -> str:
+    """
+    Sanitizes text specifically for neural TTS (Qwen3-TTS) without altering the frontend transcript:
+    - Converts interrobangs ('?!', '!?', '?!!', etc.) to a single clean '?'
+    - Reduces multiple or exaggerated exclamation marks ('!!', '!!!') to '.'
+    - Normalizes excessive punctuation while preserving natural pause tokens ('...')
+    Prevents high F0 spikes (480-571 Hz), unnatural Japanese phoneme degradation, and screeching.
+    """
+    clean_text = clean_speech_text(text)
+    # Replace combined punctuation (?!, !?, etc.) with a single question mark
+    clean_text = re.sub(r"\?+!+[!?]*|!+\?+[!?]*", "?", clean_text)
+    # Replace multiple exclamation marks (!!, !!!, etc.) with a period
+    clean_text = re.sub(r"!{2,}", ".", clean_text)
+    # Replace single ! preceded by , or . with just that punctuation
+    clean_text = re.sub(r"([.,])\s*!", r"\1", clean_text)
+    # Normalize spaces around punctuation
+    clean_text = re.sub(r"\s+([.,?!])", r"\1", clean_text)
+    clean_text = re.sub(r"\s+", " ", clean_text).strip()
+    return clean_text
+
+
 async def generate_edge_tts_stream(
     text: str,
     voice: str = "pt-BR-FranciscaNeural",
@@ -106,42 +127,37 @@ async def synthesize_speech(
     # STEP 1: Qwen3-TTS (Primary or Fallback)
     # =========================================================================
     if active_engine == "qwen3":
-        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis (mode: {qwen_mode}) | Emotion: '{emotion or 'neutral'}' | Text: \"{clean_text}\"")
+        qwen_text = clean_text_for_tts(text)
+        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis (mode: {qwen_mode}) | Emotion: '{emotion or 'neutral'}' | Text: \"{qwen_text}\"")
 
-        # 1.1 Attempt primary mode (Remote Colab or Local as requested)
+        # 1.1 Attempt primary mode (Remote Colab or Local as requested) with streaming
         try:
-            qwen_wav = await QwenTTSManager.synthesize(
-                text=clean_text,
+            content_type, stream_gen = await QwenTTSManager.synthesize_stream(
+                text=qwen_text,
                 emotion=emotion,
                 custom_instruct=instruct,
                 language="Portuguese",
                 qwen_mode=qwen_mode or "remote",
                 qwen_remote_url=qwen_remote_url,
             )
-            if qwen_wav:
-                async def _qwen_gen():
-                    yield qwen_wav
-                return "audio/wav", _qwen_gen()
+            return content_type, stream_gen
         except Exception as e:
-            print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) error: {e}")
+            print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) streaming error: {e}")
 
         # 1.2 If Remote failed and mode was remote, check if Local worker happens to be healthy
         if qwen_mode == "remote":
             local_url = "http://127.0.0.1:8005"
             if await QwenTTSManager.is_worker_healthy(local_url):
-                print("[Amadeus Voice] Remote Qwen offline, but Local Qwen worker is active! Attempting Local Qwen...")
+                print("[Amadeus Voice] Remote Qwen offline, but Local Qwen worker is active! Attempting Local Qwen stream...")
                 try:
-                    qwen_local_wav = await QwenTTSManager.synthesize(
-                        text=clean_text,
+                    content_type, local_stream_gen = await QwenTTSManager.synthesize_stream(
+                        text=qwen_text,
                         emotion=emotion,
                         custom_instruct=instruct,
                         language="Portuguese",
                         qwen_mode="local",
                     )
-                    if qwen_local_wav:
-                        async def _local_gen():
-                            yield qwen_local_wav
-                        return "audio/wav", _local_gen()
+                    return content_type, local_stream_gen
                 except Exception as local_err:
                     print(f"[Amadeus Voice] Local Qwen fallback error: {local_err}")
 
