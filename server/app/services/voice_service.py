@@ -53,10 +53,13 @@ def clean_text_for_tts(text: str) -> str:
     clean_text = clean_speech_text(text)
     # Replace combined punctuation (?!, !?, etc.) with a single question mark
     clean_text = re.sub(r"\?+!+[!?]*|!+\?+[!?]*", "?", clean_text)
-    # Replace multiple exclamation marks (!!, !!!, etc.) with a period
-    clean_text = re.sub(r"!{2,}", ".", clean_text)
+    # Replace multiple exclamation marks (!!, !!!, etc.) with a single emphatic !
+    clean_text = re.sub(r"!{2,}", "!", clean_text)
     # Replace single ! preceded by , or . with just that punctuation
     clean_text = re.sub(r"([.,])\s*!", r"\1", clean_text)
+    # Normalize ambiguous anime non-lexical vocables (Hmm..., Humm...) to articulate interjection Hum,
+    clean_text = re.sub(r"(?i)\bh+m{2,}\.{2,}", "Hum,", clean_text)
+    clean_text = re.sub(r"(?i)\bh+m{2,}\b", "Hum", clean_text)
     # Normalize spaces around punctuation
     clean_text = re.sub(r"\s+([.,?!])", r"\1", clean_text)
     clean_text = re.sub(r"\s+", " ", clean_text).strip()

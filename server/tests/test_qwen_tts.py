@@ -47,22 +47,22 @@ class TestQwenTTS(unittest.TestCase):
         self.assertEqual(req2.qwen_remote_url, "http://127.0.0.1:8005")
 
     def test_acoustic_instruction_mapper(self):
-        # Test tsundere emotion mapping
+        # Test emotion mapping (returns None when acoustic targets are disabled for pure voice testing)
         instruct_tsundere = resolve_acoustic_instruct("tsundere")
-        self.assertIn("som seco e direto sem eco", instruct_tsundere)
-        self.assertIn("Tom tsundere", instruct_tsundere)
-        self.assertEqual(EMOTION_INSTRUCT_MAP["tsundere"], instruct_tsundere)
+        self.assertIsNone(instruct_tsundere)
 
-        # Test unknown emotion fallback
+        # Test neutral emotion returns None to let pre-trained weights dominate
+        instruct_neutral = resolve_acoustic_instruct("neutral")
+        self.assertIsNone(instruct_neutral)
+
+        # Test unknown emotion fallback (None for natural voice)
         instruct_default = resolve_acoustic_instruct("unknown_emotion")
-        self.assertIn("som seco e direto sem eco", instruct_default)
-        self.assertEqual(EMOTION_INSTRUCT_MAP["neutral"], instruct_default)
+        self.assertIsNone(instruct_default)
 
         # Test custom instruct override
         custom = "Sussurrando bem perto do microfone."
         instruct_custom = resolve_acoustic_instruct(custom_instruct=custom)
-        self.assertIn(custom, instruct_custom)
-        self.assertIn("som seco e direto sem eco", instruct_custom)
+        self.assertEqual(custom, instruct_custom)
 
         # Test full 21 emotion mapping completeness and acoustic targets
         from app.services.qwen_tts.emotion_mapper import EMOTION_ACOUSTIC_TARGETS
@@ -82,13 +82,13 @@ class TestQwenTTS(unittest.TestCase):
         raw1 = "O que você disse?! Não pode ser!? Sério?!!"
         self.assertEqual(clean_text_for_tts(raw1), "O que você disse? Não pode ser? Sério?")
 
-        # Multiple exclamation marks reduced to .
+        # Multiple exclamation marks reduced to single emphatic !
         raw2 = "Idiota!! Cale a boca!!!"
-        self.assertEqual(clean_text_for_tts(raw2), "Idiota. Cale a boca.")
+        self.assertEqual(clean_text_for_tts(raw2), "Idiota! Cale a boca!")
 
         # Preserves natural ellipses pause and strips emotion comments
         raw3 = "<!-- emotion: tsundere --> Não é como se... eu me importasse com você! Idiota!!"
-        self.assertEqual(clean_text_for_tts(raw3), "Não é como se... eu me importasse com você! Idiota.")
+        self.assertEqual(clean_text_for_tts(raw3), "Não é como se... eu me importasse com você! Idiota!")
 
     def test_python_executable_discovery(self):
         py_exe = QwenTTSManager.get_python_executable()
