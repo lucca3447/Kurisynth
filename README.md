@@ -28,7 +28,7 @@ A full-stack, modular multimodal conversational AI runtime inspired by the **Ama
   - **Stage 4 — Browser Web Speech API Fallback**: Automatic client-side `SpeechSynthesisUtterance` fallback with word-boundary syllable lip-sync if the backend is unreachable.
 - **Real-Time PCM16 Streaming & Web Audio DSP Chain**:
   - Server-side $C^0$ boundary continuity ramp (120-sample / 5 ms linear interpolation across 24 kHz chunk borders) eliminating inter-chunk clicks, paired with `clean_text_for_tts` punctuation sanitization (`?!` / `!!` filtering) and 21 studio-dry acoustic emotion prompts (`emotion_mapper.py`).
-  - Client-side (`src/services/speechService.ts`) 16-bit remainder-byte alignment buffer for HTTP chunked streams, 120 ms initial jitter buffer, `1.5x` (+3.5 dB) pre-compression make-up `GainNode`, and `DynamicsCompressorNode` (`-24 dB` threshold, `4:1` ratio) for uniform loudness between shy whispers and emphatic retorts.
+  - Client-side (`src/services/speechService.ts`) 16-bit remainder-byte alignment buffer for HTTP chunked streams, 120 ms initial jitter buffer, `1.5x` (+3.5 dB) pre-compression make-up `GainNode`, and `DynamicsCompressorNode` (`-18 dB` threshold, `3.5:1` ratio) for uniform loudness between shy whispers and emphatic retorts.
 - **Visual State Machine & Audio-Reactive HUD**:
   - Supports **174 visual novel sprite assets** mapped across **21 emotional states** (`AmadeusSpriteView.tsx`), falling back natively to a stylized procedural holographic silhouette when proprietary sprites are absent.
   - Real-time FFT vocal-band frequency analysis (`300–3500 Hz`) driving mouth frames, stochastic eye-blinking, an HTML5 Canvas **Audio Oscilloscope** (`AudioOscilloscope.tsx`), and a **Nixie Tube Worldline Divergence Meter** (`DivergenceMeter.tsx`).
@@ -55,11 +55,11 @@ OpenAmadeus scales from CPU-only laptops to local NVIDIA GPUs and free/low-cost 
 flowchart TD
     subgraph Client["Frontend — React 19 / TypeScript / Vite (:5173)"]
         UI["HUD, ChatFeedStream & SettingsModal"]
-        SpriteEngine["AmadeusSpriteView (174 Sprites / Hologram Fallback)"]
+        SpriteEngine["AmadeusSpriteView (174 Sprite Pack / 58 Portrait Frames / Hologram)"]
         Oscilloscope["AudioOscilloscope (HTML5 Canvas FFT)"]
         NixieMeter["DivergenceMeter (Nixie Tube Telemetry)"]
         Reader["speechService.ts: PCM16 Stream Reader + Remainder Byte Buffer"]
-        DSP["Web Audio DSP: Jitter (+120ms) -> Make-up Gain (1.5x) -> Compressor (-24dB) -> AnalyserNode"]
+        DSP["Web Audio DSP: Jitter (+120ms) -> Make-up Gain (1.5x) -> Compressor (-18dB) -> AnalyserNode"]
         UI --> Reader
         Reader --> DSP
         DSP --> SpriteEngine
@@ -75,10 +75,11 @@ flowchart TD
         Router --> VoiceManager
         Orchestrator --> EmotionParser
         EmotionParser --> VoiceManager
+        VoiceManager -- "StreamingResponse (audio/L16, WAV, MP3)" --> Reader
     end
 
     subgraph VoiceEngines["Modular Voice Synthesis Engines"]
-        QwenWorker["Kurisu Qwen3-TTS Worker (:8005 or Colab Cloudflare Tunnel)<br/>FasterQwen3TTS CUDA Graphs + Mimi Warm-up + 120-Sample C0 Ramp"]
+        QwenWorker["Kurisu Qwen3-TTS Worker (:8005 or Colab Tunnel) — FasterQwen3TTS CUDA Graphs + C0 Ramp"]
         KokoroEngine["Kokoro-TTS 82M (lang_code='p', voice='pf_dora')"]
         EdgeTTS["Microsoft Edge-TTS (pt-BR-FranciscaNeural / ja-JP-NanamiNeural)"]
         RVCWorker["Kurisu RVC v2 Pipeline (KurisuRVCv147 + HuBERT + RMVPE)"]
@@ -87,11 +88,15 @@ flowchart TD
         VoiceManager --> EdgeTTS
         KokoroEngine -. "use_rvc=True" .-> RVCWorker
         EdgeTTS -. "use_rvc=True" .-> RVCWorker
+        QwenWorker -- "audio/L16;rate=24000 (PCM Stream)" --> VoiceManager
+        RVCWorker -- "audio/wav" --> VoiceManager
+        KokoroEngine -- "audio/wav" --> VoiceManager
+        EdgeTTS -- "audio/mpeg" --> VoiceManager
     end
 
     subgraph Persistence["Hybrid Memory & Fine-Tuning Layer"]
         SQLite[("SQLite: amadeus.db")]
-        ChromaDB[("ChromaDB: memory_db<br/>+ 63 Few-Shot Kurisu Dialogues")]
+        ChromaDB[("ChromaDB: memory_db + 63 Few-Shot Kurisu Dialogues")]
     end
 
     subgraph ExternalLLMs["LLM Inference Providers"]
@@ -101,16 +106,13 @@ flowchart TD
         OfflineSim["Local Heuristic Offline Simulator"]
     end
 
+    UI -- "POST /api/chat & /api/tts" --> Router
     Orchestrator <--> SQLite
     Orchestrator <--> ChromaDB
     Orchestrator --> Gemini
     Orchestrator --> Groq
     Orchestrator --> OpenRouter
     Orchestrator --> OfflineSim
-    QwenWorker -- "audio/L16;rate=24000 (Streaming PCM16)" --> Reader
-    RVCWorker -- "audio/wav" --> UI
-    KokoroEngine -- "audio/wav" --> UI
-    EdgeTTS -- "audio/mpeg" --> UI
 ```
 
 ## 🎙️ Neural Voice Models & Asset Setup
@@ -312,9 +314,11 @@ npm run build
 OpenAmadeus follows [Semantic Versioning 2.0.0](https://semver.org/) (`MAJOR.MINOR.PATCH`). Below is our planned evolutionary track:
 
 - **`v0.1.0` (Current)**: Real-time Qwen3-TTS CUDA Graphs streaming (~391ms TTFA), $C^0$ boundary DSP ramp, Web Audio compressor, and 4-stage voice fallback cascade.
-- **`v0.2.0`**: Per-tag acoustic emotion calibration (`emotion_mapper.py`) and token/sentence-level LLM-to-TTS streaming pipeline.
-- **`v0.3.0`**: Additional local voice backends (GGML/ONNX) and standalone desktop packaging.
-- **`v1.0.0`**: One-click installer and full GPU-orchestrated Docker release.
+- **`v0.2.0`**: 21-emotion acoustic calibration (`emotion_mapper.py`), 174-sprite camera & pose state machine, hands-free VAD & push-to-talk audio UX, and modern dev/tech persona tuning.
+- **`v0.3.0`**: Multilingual expansion, persona cultural variants (PT-BR, EN, JA), and dynamic code-switching TTS.
+- **`v0.4.0`**: Multimodal screen vision (`getDisplayMedia`) with on-demand snapshot inspection and region analysis.
+- **`v0.5.0`**: Floating desktop pop-up / overlay (*Always-on-Top* companion) and continuous co-pilot monitoring.
+- **`v1.0.0`**: Public API freeze, one-click standalone installer, and fully GPU-orchestrated Docker release.
 
 ## 🤝 Contributing, Versioning & Commit Standards
 
