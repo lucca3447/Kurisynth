@@ -4,8 +4,18 @@ import sys
 import re
 import threading
 import numpy as np
-import torch
-import soundfile as sf
+try:
+    import torch
+    default_dtype = torch.float32
+except ImportError:
+    torch = None
+    default_dtype = None
+
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response, StreamingResponse
@@ -15,7 +25,7 @@ from typing import Optional
 model = None
 load_error = None
 device_name = "cpu"
-dtype_used = torch.float32
+dtype_used = default_dtype
 active_backend = "unknown"
 _gpu_lock = threading.Lock()
 
@@ -154,9 +164,10 @@ class SynthesizeRequest(BaseModel):
     text: str
     language: Optional[str] = "Portuguese"
     instruct: Optional[str] = None
-    temperature: Optional[float] = 0.75
+    temperature: Optional[float] = 0.7
     top_p: Optional[float] = 0.95
-    repetition_penalty: Optional[float] = 1.05
+    repetition_penalty: Optional[float] = 1.0
+    max_new_tokens: Optional[int] = 2048
 
 
 @app.get("/health")
@@ -205,9 +216,9 @@ def synthesize_stream(req: SynthesizeRequest):
                     language=req.language or "Portuguese",
                     instruct=req.instruct or None,
                     chunk_size=8,
-                    temperature=req.temperature if req.temperature is not None else 0.75,
+                    temperature=req.temperature if req.temperature is not None else 0.7,
                     top_p=req.top_p if req.top_p is not None else 0.95,
-                    repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.05,
+                    repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
                 )
                 for audio_chunk, sr, _ in stream_gen:
                     chunk = audio_chunk.copy()
@@ -223,9 +234,9 @@ def synthesize_stream(req: SynthesizeRequest):
                         speaker="kurisu",
                         language=req.language or "Portuguese",
                         instruct=req.instruct or None,
-                        temperature=req.temperature if req.temperature is not None else 0.75,
+                        temperature=req.temperature if req.temperature is not None else 0.7,
                         top_p=req.top_p if req.top_p is not None else 0.95,
-                        repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.05,
+                        repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
                     )
                 full_audio = wavs[0]
                 chunk_len = int(sr * 0.64)  # ~640ms chunks matching faster runtime
@@ -268,9 +279,9 @@ def synthesize(req: SynthesizeRequest):
                     speaker="kurisu",
                     language=req.language or "Portuguese",
                     instruct=req.instruct or None,
-                    temperature=req.temperature if req.temperature is not None else 0.75,
+                    temperature=req.temperature if req.temperature is not None else 0.7,
                     top_p=req.top_p if req.top_p is not None else 0.95,
-                    repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.05,
+                    repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
                 )
             full_audio = wavs[0]
             buffer = io.BytesIO()
