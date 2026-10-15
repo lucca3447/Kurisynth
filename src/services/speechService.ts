@@ -52,7 +52,7 @@ export function normalizeForSpeech(rawText: string): string {
   text = text.replace(/[:;]-?[)(DPpOdD]/g, '');
 
   // 4. Remove robotic narration phrases like "Aqui vai um sorriso para você"
-  text = text.replace(/^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*/i, 'U-um sorriso? Se você faz tanta questão... ');
+  text = text.replace(/^(?:claro[,. ]+)?aqui vai um sorriso para voc[eê][.,! ]*/i, 'Um sorriso? Se você faz tanta questão... ');
   text = text.replace(/^(?:aqui est[aá] o meu sorriso|aqui vai o meu sorriso)[.,!:]*/i, '');
 
   // 5. Remove markdown code blocks, bold, italic, quotes
@@ -61,9 +61,8 @@ export function normalizeForSpeech(rawText: string): string {
   text = text.replace(/[*_~#]/g, '');
   text = text.replace(/\[(.*?)\]\(.*?\)/g, '$1');
 
-  // 3. Stutter / hesitation normalization for anime persona:
-  // "N-não" -> "N... não", "Q-quem" -> "Q... quem", "E-eu" -> "E... eu", "D-do que" -> "D... do que"
-  text = text.replace(/\b([a-zA-ZáàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ])-([a-zA-ZáàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]+)\b/g, '$1... $2');
+  // 3. Stutter preservation: keep natural hyphenated stutters (e.g. "N-não", "Q-quem", "U-um")
+  // without injecting triple dots that trigger early neural TTS speech cutoff.
 
   // 4. Steins;Gate Lore & Tech Acronym Pronunciations
   text = text.replace(/\bSERN\b/g, 'Sérn');
