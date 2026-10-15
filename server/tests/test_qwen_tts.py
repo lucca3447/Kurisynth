@@ -47,9 +47,11 @@ class TestQwenTTS(unittest.TestCase):
         self.assertEqual(req2.qwen_remote_url, "http://127.0.0.1:8005")
 
     def test_acoustic_instruction_mapper(self):
-        # Test emotion mapping (returns None when acoustic targets are disabled for pure voice testing)
+        # Test tsundere instruction returns English calibrated prompt
         instruct_tsundere = resolve_acoustic_instruct("tsundere")
-        self.assertIsNone(instruct_tsundere)
+        self.assertIsNotNone(instruct_tsundere)
+        self.assertIn("Mid pitch", instruct_tsundere)
+        self.assertIn("defensive", instruct_tsundere)
 
         # Test neutral emotion returns None to let pre-trained weights dominate
         instruct_neutral = resolve_acoustic_instruct("neutral")
@@ -64,16 +66,20 @@ class TestQwenTTS(unittest.TestCase):
         instruct_custom = resolve_acoustic_instruct(custom_instruct=custom)
         self.assertEqual(custom, instruct_custom)
 
-        # Test full 21 emotion mapping completeness and acoustic targets
+        # Test full 21 emotion mapping completeness and pitch anchoring (NO high pitch)
         from app.services.qwen_tts.emotion_mapper import EMOTION_ACOUSTIC_TARGETS
+        from app.services.emotion_service import VALID_EMOTIONS
         self.assertEqual(len(EMOTION_INSTRUCT_MAP), 21)
         self.assertEqual(len(EMOTION_ACOUSTIC_TARGETS), 21)
-        for emo in EMOTION_INSTRUCT_MAP:
+        self.assertEqual(len(VALID_EMOTIONS), 21)
+        self.assertEqual(set(EMOTION_INSTRUCT_MAP.keys()), set(VALID_EMOTIONS))
+
+        for emo, prompt in EMOTION_INSTRUCT_MAP.items():
             self.assertIn(emo, EMOTION_ACOUSTIC_TARGETS)
-            target = EMOTION_ACOUSTIC_TARGETS[emo]
-            self.assertGreater(target["f0_hz"], 180.0)
-            self.assertLess(target["f0_hz"], 600.0)
-            self.assertGreater(target["rms"], 0.01)
+            if prompt is not None:
+                # Ensure no prompts contain high pitch (prevents >500Hz screeching)
+                self.assertNotIn("high pitch", prompt.lower())
+                self.assertTrue(prompt.startswith("Mid") or prompt.startswith("Low"))
 
     def test_clean_text_for_tts(self):
         from app.services.voice_service import clean_text_for_tts
@@ -86,9 +92,27 @@ class TestQwenTTS(unittest.TestCase):
         raw2 = "Idiota!! Cale a boca!!!"
         self.assertEqual(clean_text_for_tts(raw2), "Idiota! Cale a boca!")
 
-        # Preserves natural ellipses pause and strips emotion comments
-        raw3 = "<!-- emotion: tsundere --> Não é como se... eu me importasse com você! Idiota!!"
-        self.assertEqual(clean_text_for_tts(raw3), "Não é como se... eu me importasse com você! Idiota!")
+        # Unicode horizontal ellipsis normalized to ASCII ... and preserved mid-sentence
+        raw_cut = "U... um, quem… não sei se devo acreditar nesse elogio vindo de alguém que ainda me chama de… mas, se está me dizendo isso..."
+        cleaned_cut = clean_text_for_tts(raw_cut)
+        self.assertNotIn("…", cleaned_cut)
+        self.assertTrue(cleaned_cut.startswith("Hum, quem... não sei"))
+        self.assertIn("chama de... mas", cleaned_cut)
+
+        # Hesitation vocables and anime sighs/stutters (U-um, Uhm, Hmm) sanitized to articulate Hum
+        raw_stutter = "U-um... não sei! Uhm, quem você pensa que é? Hmm... espere."
+        cleaned_stutter = clean_text_for_tts(raw_stutter)
+        self.assertNotIn("U-um", cleaned_stutter)
+        self.assertNotIn("Uhm", cleaned_stutter)
+        self.assertNotIn("Hmm", cleaned_stutter)
+        self.assertIn("Hum... não sei!", cleaned_stutter)
+        self.assertIn("Hum, quem", cleaned_stutter)
+        self.assertIn("Hum... espere.", cleaned_stutter)
+
+        # Single-letter prefix stutters (Q-quem, L-linda, N-não, M-mas) cleaned cleanly
+        raw_letters = "Q-quem?! L-linda?! N-não me diga que você acha isso... M-mas espere!"
+        cleaned_letters = clean_text_for_tts(raw_letters)
+        self.assertEqual(cleaned_letters, "Quem? Linda? Não me diga que você acha isso... Mas espere!")
 
     def test_python_executable_discovery(self):
         py_exe = QwenTTSManager.get_python_executable()
