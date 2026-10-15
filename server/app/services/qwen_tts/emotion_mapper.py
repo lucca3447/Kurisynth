@@ -1,4 +1,8 @@
+import os
 from typing import Optional, Dict, Any
+
+# Flag to toggle between acoustic English instruct steering and pure pre-trained weights
+QWEN_USE_EMOTION_INSTRUCT = os.environ.get("QWEN_USE_EMOTION_INSTRUCT", "true").lower() in ("1", "true", "yes")
 
 # Acoustic ground-truth targets derived from Asami Imai's canonical Steins;Gate voicelines
 EMOTION_ACOUSTIC_TARGETS: Dict[str, Dict[str, Any]] = {
@@ -29,42 +33,49 @@ EMOTION_ACOUSTIC_TARGETS: Dict[str, Dict[str, Any]] = {
     "holding_back_tears": {"f0_hz": 513.4, "f0_range": (287.1, 585.4), "rms": 0.167, "file": "kurisu_0656.wav"},
 }
 
-# Minimalist, non-intrusive style steering.
-# Short 1-4 word prompts let the pre-trained weights of Asami Imai dominate naturally without cross-attention dilution.
+# Calibrated English instructions following official 7-dimension guidance:
+# Concise (10-20 words), anchored at mid-low pitch to prevent high F0 (>500Hz) screeching,
+# with restrained delivery and distinct emotional baselines.
 EMOTION_INSTRUCT_MAP: Dict[str, Optional[str]] = {
-    # Neutral: None allows pure native weights without prompt interference
     "neutral": None,
-    # Tsundere & Expressive Agudo
-    "tsundere": "Voz tsundere, irritada e altiva.",
-    "flustered": "Voz envergonhada e gaguejando.",
-    "blushing": "Voz tímida e constrangida.",
-    "annoyed": "Voz brava e cortante.",
-    "wink": "Voz brincalhona e conspiratória.",
-    "look_side": "Voz esquiva e desconversando.",
-    "eyes_closed": "Voz serena e calma.",
-    "puzzled": "Voz curiosa e confusa.",
-    "happy": "Voz alegre e animada.",
-    "smile": "Voz gentil e calorosa.",
-    # Registro Grave / Firme
-    "stern": "Voz severa e austera.",
-    "serious": "Voz séria e compenetrada.",
-    "disdain": "Voz fria e desdenhosa.",
-    "thinking": "Voz pensativa e reflexiva.",
-    "analytical": "Voz acadêmica e articulada.",
-    "smug": "Voz convencida e presunçosa.",
-    "worried": "Voz preocupada e atenta.",
-    # Registro Emocional / Intenso
-    "sad": "Voz triste e melancólica.",
-    "holding_back_tears": "Voz emocionada, contendo lágrimas.",
-    "desperate": "Voz aflita e urgente.",
+    "tsundere": "Mid pitch, defensive, slightly annoyed and reluctant, sharp articulate diction.",
+    "flustered": "Mid-low pitch, embarrassed and defensive, restrained tsundere delivery, articulate diction.",
+    "blushing": "Mid-low pitch, shy and subdued, soft articulate diction.",
+    "serious": "Mid-low pitch, composed, firm and rational, steady pace.",
+    "analytical": "Mid-low pitch, academic, precise articulation, rational tone.",
+    "thinking": "Mid-low pitch, thoughtful and reflective, measured pace.",
+    "stern": "Low pitch, authoritative and strict, controlled pace.",
+    "annoyed": "Mid pitch, exasperated, irritated, crisp and cutting delivery.",
+    "smug": "Mid pitch, confident, slightly mocking and teasing, self-assured.",
+    "disdain": "Mid-low pitch, cold, aloof and dismissive, dry tone.",
+    "smile": "Mid pitch, gentle and warm, calm friendly delivery.",
+    "happy": "Mid pitch, bright and pleased, lively but restrained pace.",
+    "wink": "Mid pitch, playful, conspiratorial and teasing.",
+    "puzzled": "Mid pitch, curious, slightly confused, inquisitive inflection.",
+    "worried": "Mid-low pitch, tense, concerned and cautious delivery.",
+    "sad": "Mid-low pitch, quiet, melancholic and subdued, slow pace.",
+    "holding_back_tears": "Mid-low pitch, emotionally strained, choked up, slow restrained pace.",
+    "desperate": "Mid pitch, anxious, urgent and distressed, tense delivery.",
+    "look_side": "Mid-low pitch, evasive, looking away, slightly defensive.",
+    "eyes_closed": "Mid-low pitch, tranquil, serene, relaxed and quiet delivery.",
 }
 
 
 def resolve_acoustic_instruct(emotion: Optional[str] = None, custom_instruct: Optional[str] = None) -> Optional[str]:
     """
-    Returns None to test Qwen3-TTS purely on its pre-trained weights without any acoustic targets or prompt steering.
-    If custom_instruct is explicitly provided, it will be respected.
+    Resolves acoustic instruction for Qwen3-TTS:
+    1. Explicit custom_instruct takes absolute precedence.
+    2. If QWEN_USE_EMOTION_INSTRUCT is disabled (env/flag), returns None for pure weights.
+    3. Resolves concise English prompt mapped to canonical 21 emotions.
     """
     if custom_instruct:
         return custom_instruct
-    return None
+
+    if not QWEN_USE_EMOTION_INSTRUCT:
+        return None
+
+    if not emotion:
+        return EMOTION_INSTRUCT_MAP.get("neutral")
+
+    clean_emotion = emotion.lower().strip()
+    return EMOTION_INSTRUCT_MAP.get(clean_emotion, EMOTION_INSTRUCT_MAP.get("neutral"))
