@@ -23,6 +23,7 @@ export interface SpeakOptions {
   qwenRemoteUrl?: string;
   emotion?: string;
   instruct?: string;
+  stream?: boolean;
   useNeural?: boolean;
   neuralVoice?: string;
   useRvc?: boolean;
@@ -399,6 +400,7 @@ export class SpeechService {
           qwenRemoteUrl: options.qwenRemoteUrl,
           emotion: options.emotion,
           instruct: options.instruct,
+          stream: options.stream ?? false,
           voice,
           rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
           pitch: pitch.startsWith('-') || pitch.startsWith('+') ? pitch : `+${pitch}`,
@@ -501,7 +503,7 @@ export class SpeechService {
     const reader = body.getReader();
     let remainder: Uint8Array | null = null;
     let nextStartTime = 0;
-    const JITTER_BUFFER_SEC = 0.12;
+    const JITTER_BUFFER_SEC = 0.48; // 480ms jitter buffer to protect against remote tunnel packet latency spikes
     let hasStarted = false;
 
     try {
