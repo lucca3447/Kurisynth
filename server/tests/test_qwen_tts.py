@@ -29,6 +29,7 @@ class TestQwenTTS(unittest.TestCase):
         self.assertEqual(req1.qwen_mode, "remote")
         self.assertEqual(req1.qwen_remote_url, "https://amadeus-tts.trycloudflare.com")
         self.assertEqual(req1.rvc_model, "KurisuRVCv147")
+        self.assertFalse(req1.stream)
 
         # CamelCase input (from frontend JSON)
         req2 = TTSRequest.model_validate({
@@ -39,12 +40,14 @@ class TestQwenTTS(unittest.TestCase):
             "qwenMode": "local",
             "qwenRemoteUrl": "http://127.0.0.1:8005",
             "rvcModel": "KurisuRVCv147",
+            "stream": True,
         })
         self.assertEqual(req2.engine, "qwen3")
         self.assertEqual(req2.emotion, "flustered")
         self.assertEqual(req2.instruct, "voz envergonhada")
         self.assertEqual(req2.qwen_mode, "local")
         self.assertEqual(req2.qwen_remote_url, "http://127.0.0.1:8005")
+        self.assertTrue(req2.stream)
 
     def test_acoustic_instruction_mapper(self):
         # Test tsundere instruction returns English calibrated prompt
@@ -52,6 +55,14 @@ class TestQwenTTS(unittest.TestCase):
         self.assertIsNotNone(instruct_tsundere)
         self.assertIn("Mid pitch", instruct_tsundere)
         self.assertIn("defensive", instruct_tsundere)
+
+        # Test smile instruction returns refined non-contradictory prompt
+        instruct_smile = resolve_acoustic_instruct("smile")
+        self.assertIsNotNone(instruct_smile)
+        self.assertIn("subtle smile", instruct_smile)
+        self.assertIn("slightly amused", instruct_smile)
+        self.assertNotIn("gentle and warm", instruct_smile)
+        self.assertNotIn("friendly", instruct_smile)
 
         # Test neutral emotion returns None to let pre-trained weights dominate
         instruct_neutral = resolve_acoustic_instruct("neutral")

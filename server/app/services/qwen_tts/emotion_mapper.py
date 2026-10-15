@@ -48,7 +48,7 @@ EMOTION_INSTRUCT_MAP: Dict[str, Optional[str]] = {
     "annoyed": "Mid pitch, exasperated, irritated, crisp and cutting delivery.",
     "smug": "Mid pitch, confident, slightly mocking and teasing, self-assured.",
     "disdain": "Mid-low pitch, cold, aloof and dismissive, dry tone.",
-    "smile": "Mid pitch, gentle and warm, calm friendly delivery.",
+    "smile": "Mid pitch, subtle smile, slightly amused, articulate tsundere delivery.",
     "happy": "Mid pitch, bright and pleased, lively but restrained pace.",
     "wink": "Mid pitch, playful, conspiratorial and teasing.",
     "puzzled": "Mid pitch, curious, slightly confused, inquisitive inflection.",
