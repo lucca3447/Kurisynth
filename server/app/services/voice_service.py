@@ -34,7 +34,9 @@ def clean_speech_text(text: str) -> str:
     clean_text = re.sub(r"\*[^*]+\*", "", clean_text)
     clean_text = re.sub(r"[:;]-?[)(DPpOdD]", "", clean_text)
     clean_text = re.sub(r"[*_~`#\"'«»]", "", clean_text)
-    # Normalize excessive dots to clean triple dots (preserving natural tsundere pause)
+    # Normalize Unicode horizontal ellipsis (\u2026 '…' and \u2025 '‥')
+    clean_text = re.sub(r"[…‥]", "...", clean_text)
+    # Normalize excessive dots to clean triple dots
     clean_text = re.sub(r"\.{3,}", "...", clean_text)
     # Ensure proper spacing around ellipses
     clean_text = re.sub(r"\s*\.\.\.\s*", "... ", clean_text)
@@ -45,10 +47,13 @@ def clean_speech_text(text: str) -> str:
 def clean_text_for_tts(text: str) -> str:
     """
     Sanitizes text specifically for neural TTS (Qwen3-TTS) without altering the frontend transcript:
+    - Normalizes Unicode ellipsis (\u2026 '…' and \u2025 '‥') to ASCII '...'
+    - Preserves natural ASCII ellipses pauses ('...') mid-sentence for cadence
     - Converts interrobangs ('?!', '!?', '?!!', etc.) to a single clean '?'
     - Reduces multiple or exaggerated exclamation marks ('!!', '!!!') to '.'
-    - Normalizes excessive punctuation while preserving natural pause tokens ('...')
-    Prevents high F0 spikes (480-571 Hz), unnatural Japanese phoneme degradation, and screeching.
+    - Sanitizes anime sighs/hesitations ('U-um', 'U... um', 'Uhm') into articulate 'Hum,'
+    - De-stutters single-letter prefixes ('Q-quem' -> 'Quem', 'L-linda' -> 'Linda', 'N-não' -> 'Não')
+    Prevents early <|endofspeech|> truncation, high F0 spikes (480-571 Hz), and screeching.
     """
     clean_text = clean_speech_text(text)
     # Replace combined punctuation (?!, !?, etc.) with a single question mark
@@ -57,10 +62,30 @@ def clean_text_for_tts(text: str) -> str:
     clean_text = re.sub(r"!{2,}", "!", clean_text)
     # Replace single ! preceded by , or . with just that punctuation
     clean_text = re.sub(r"([.,])\s*!", r"\1", clean_text)
-    # Normalize ambiguous anime non-lexical vocables (Hmm..., Humm...) to articulate interjection Hum,
-    clean_text = re.sub(r"(?i)\bh+m{2,}\.{2,}", "Hum,", clean_text)
+    # 1. Map ambiguous anime non-lexical hesitations and stutters (U-um, U... um, Uhm, Hmm)
+    # into articulate conversational interjection 'Hum,' to prevent vocal sighs/groans ("gemidos")
+    clean_text = re.sub(r"(?i)\b[u]+(?:\s*\.{2,}\s*|-|\s+)[u]+m\b", "Hum,", clean_text)
+    clean_text = re.sub(r"(?i)\b[u]+h+m*\b", "Hum", clean_text)
+    clean_text = re.sub(r"(?i)\b[u]+(?:\s*\.{2,}\s*|-|\s+)uh\b", "Hum,", clean_text)
     clean_text = re.sub(r"(?i)\bh+m{2,}\b", "Hum", clean_text)
-    # Normalize spaces around punctuation
+
+    # 2. General single-letter stutters: Q-quem -> Quem, Q... quem -> Quem, L-linda -> Linda, N-não -> Não
+    def _un_stutter(m: re.Match) -> str:
+        prefix = m.group(1)
+        word = m.group(2)
+        if prefix.lower() == word[0].lower():
+            return word.capitalize() if prefix.isupper() else word
+        return m.group(0)
+
+    clean_text = re.sub(r"\b([A-Za-zÀ-ÿ])(?:\s*\.{2,}\s*|-)([a-zà-ÿ]+)\b", _un_stutter, clean_text)
+
+    # Clean redundant punctuation around Hum
+    clean_text = re.sub(r"\bHum\s*,\s*,", "Hum,", clean_text)
+    clean_text = re.sub(r"\bHum\s*,\s*\.\.\.", "Hum...", clean_text)
+    clean_text = re.sub(r"\bHum\s*,\s*", "Hum, ", clean_text)
+
+    # Normalize spaces around punctuation while PRESERVING ASCII ellipsis (...) mid-sentence
+    clean_text = re.sub(r"\s*\.\.\.\s*", "... ", clean_text)
     clean_text = re.sub(r"\s+([.,?!])", r"\1", clean_text)
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
     return clean_text

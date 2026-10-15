@@ -8,8 +8,6 @@ VALID_EMOTIONS = [
     "serious", "analytical", "thinking", "annoyed", "stern", "smug",
     "disdain", "puzzled", "worried", "sad", "holding_back_tears",
     "desperate", "wink", "look_side", "eyes_closed",
-    # Legacy aliases
-    "surprised"
 ]
 
 def is_scratchpad_or_reasoning(text: Optional[str]) -> bool:
