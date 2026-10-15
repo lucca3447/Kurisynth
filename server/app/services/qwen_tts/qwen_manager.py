@@ -309,6 +309,7 @@ class QwenTTSManager:
                     "temperature": 0.7,
                     "top_p": 0.95,
                     "repetition_penalty": 1.0,
+                    "max_new_tokens": 2048,
                 },
                 timeout=90.0,
             )
@@ -364,6 +365,7 @@ class QwenTTSManager:
                     "temperature": 0.7,
                     "top_p": 0.95,
                     "repetition_penalty": 1.0,
+                    "max_new_tokens": 2048,
                 },
                 timeout=httpx.Timeout(90.0, connect=5.0, read=90.0),
             )

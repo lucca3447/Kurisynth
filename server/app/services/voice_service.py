@@ -137,6 +137,7 @@ async def synthesize_speech(
     qwen_remote_url: Optional[str] = None,
     emotion: Optional[str] = None,
     instruct: Optional[str] = None,
+    stream: bool = False,
 ) -> Tuple[str, AsyncGenerator[bytes, None]]:
     """
     Modular speech orchestrator with sequential fallback:
@@ -156,38 +157,76 @@ async def synthesize_speech(
     # =========================================================================
     if active_engine == "qwen3":
         qwen_text = clean_text_for_tts(text)
-        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis (mode: {qwen_mode}) | Emotion: '{emotion or 'neutral'}' | Text: \"{qwen_text}\"")
+        print(f"[Amadeus Voice] 🎙️ Qwen3 Synthesis (mode: {qwen_mode}, stream: {stream}) | Emotion: '{emotion or 'neutral'}' | Text: \"{qwen_text}\"")
 
-        # 1.1 Attempt primary mode (Remote Colab or Local as requested) with streaming
-        try:
-            content_type, stream_gen = await QwenTTSManager.synthesize_stream(
-                text=qwen_text,
-                emotion=emotion,
-                custom_instruct=instruct,
-                language="Portuguese",
-                qwen_mode=qwen_mode or "remote",
-                qwen_remote_url=qwen_remote_url,
-            )
-            return content_type, stream_gen
-        except Exception as e:
-            print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) streaming error: {e}")
+        # 1.1 Complete WAV delivery (Default: 100% integrity, zero buffer underrun/cuts over tunnels)
+        if not stream:
+            try:
+                wav_bytes = await QwenTTSManager.synthesize(
+                    text=qwen_text,
+                    emotion=emotion,
+                    custom_instruct=instruct,
+                    language="Portuguese",
+                    qwen_mode=qwen_mode or "remote",
+                    qwen_remote_url=qwen_remote_url,
+                )
+                if wav_bytes:
+                    async def _wav_generator():
+                        yield wav_bytes
+                    return "audio/wav", _wav_generator()
+            except Exception as e:
+                print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) complete WAV error: {e}")
 
-        # 1.2 If Remote failed and mode was remote, check if Local worker happens to be healthy
-        if qwen_mode == "remote":
-            local_url = "http://127.0.0.1:8005"
-            if await QwenTTSManager.is_worker_healthy(local_url):
-                print("[Amadeus Voice] Remote Qwen offline, but Local Qwen worker is active! Attempting Local Qwen stream...")
-                try:
-                    content_type, local_stream_gen = await QwenTTSManager.synthesize_stream(
-                        text=qwen_text,
-                        emotion=emotion,
-                        custom_instruct=instruct,
-                        language="Portuguese",
-                        qwen_mode="local",
-                    )
-                    return content_type, local_stream_gen
-                except Exception as local_err:
-                    print(f"[Amadeus Voice] Local Qwen fallback error: {local_err}")
+            # Local fallback for complete WAV
+            if qwen_mode == "remote":
+                local_url = "http://127.0.0.1:8005"
+                if await QwenTTSManager.is_worker_healthy(local_url):
+                    print("[Amadeus Voice] Remote Qwen offline, attempting Local Qwen WAV...")
+                    try:
+                        local_wav = await QwenTTSManager.synthesize(
+                            text=qwen_text,
+                            emotion=emotion,
+                            custom_instruct=instruct,
+                            language="Portuguese",
+                            qwen_mode="local",
+                        )
+                        if local_wav:
+                            async def _local_wav_gen():
+                                yield local_wav
+                            return "audio/wav", _local_wav_gen()
+                    except Exception as local_err:
+                        print(f"[Amadeus Voice] Local Qwen WAV fallback error: {local_err}")
+
+        # 1.2 Streaming mode (if explicitly requested via stream=True)
+        else:
+            try:
+                content_type, stream_gen = await QwenTTSManager.synthesize_stream(
+                    text=qwen_text,
+                    emotion=emotion,
+                    custom_instruct=instruct,
+                    language="Portuguese",
+                    qwen_mode=qwen_mode or "remote",
+                    qwen_remote_url=qwen_remote_url,
+                )
+                return content_type, stream_gen
+            except Exception as e:
+                print(f"[Amadeus Voice] Primary Qwen3 ({qwen_mode}) streaming error: {e}")
+
+            if qwen_mode == "remote":
+                local_url = "http://127.0.0.1:8005"
+                if await QwenTTSManager.is_worker_healthy(local_url):
+                    print("[Amadeus Voice] Remote Qwen offline, attempting Local Qwen stream...")
+                    try:
+                        content_type, local_stream_gen = await QwenTTSManager.synthesize_stream(
+                            text=qwen_text,
+                            emotion=emotion,
+                            custom_instruct=instruct,
+                            language="Portuguese",
+                            qwen_mode="local",
+                        )
+                        return content_type, local_stream_gen
+                    except Exception as local_err:
+                        print(f"[Amadeus Voice] Local Qwen fallback error: {local_err}")
 
         # Cascade down to Kokoro-TTS with Kurisu RVC enabled
         print("[Amadeus Voice] Qwen3 offline or failed; cascaded fallback to Kokoro-TTS + RVC.")

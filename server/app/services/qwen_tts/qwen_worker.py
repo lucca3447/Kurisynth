@@ -219,6 +219,7 @@ def synthesize_stream(req: SynthesizeRequest):
                     temperature=req.temperature if req.temperature is not None else 0.7,
                     top_p=req.top_p if req.top_p is not None else 0.95,
                     repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
+                    max_new_tokens=req.max_new_tokens if req.max_new_tokens is not None else 2048,
                 )
                 for audio_chunk, sr, _ in stream_gen:
                     chunk = audio_chunk.copy()
@@ -237,6 +238,7 @@ def synthesize_stream(req: SynthesizeRequest):
                         temperature=req.temperature if req.temperature is not None else 0.7,
                         top_p=req.top_p if req.top_p is not None else 0.95,
                         repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
+                        max_new_tokens=req.max_new_tokens if req.max_new_tokens is not None else 2048,
                     )
                 full_audio = wavs[0]
                 chunk_len = int(sr * 0.64)  # ~640ms chunks matching faster runtime
@@ -282,6 +284,7 @@ def synthesize(req: SynthesizeRequest):
                     temperature=req.temperature if req.temperature is not None else 0.7,
                     top_p=req.top_p if req.top_p is not None else 0.95,
                     repetition_penalty=req.repetition_penalty if req.repetition_penalty is not None else 1.0,
+                    max_new_tokens=req.max_new_tokens if req.max_new_tokens is not None else 2048,
                 )
             full_audio = wavs[0]
             buffer = io.BytesIO()
