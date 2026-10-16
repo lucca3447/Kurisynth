@@ -15,9 +15,25 @@ A full-stack, modular multimodal conversational AI runtime inspired by the **Ama
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_RAG-orange)](https://www.trychroma.com/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
+## 📸 Interface & Demonstrations
+
+| Conversational HUD & Active Sprite | Immersive Visual Novel Mode |
+| :---: | :---: |
+| ![Chat Interface - Good Night Sign-off](docs/screenshots/01_chat_goodnight.png)<br><sub>*Conversational chat interface featuring audio-reactive sprite rendering, session history, and natural contextual sign-off ("Good night")*</sub> | ![Visual Novel Mode - Late-Night Greeting](docs/screenshots/03_vn_mode_late_night.png)<br><sub>*Full-screen Visual Novel mode with atmospheric backlighting, retro dialogue box, and time-aware late-night greeting*</sub> |
+
+| Cortex & Episodic Memory Inspector (RAG) | System Configuration (LLM & Neural TTS) |
+| :---: | :---: |
+| ![Cortex & Memory Inspector](docs/screenshots/02_cortex_memory_inspector.png)<br><sub>*Real-time inspection and management of semantic vector memory blocks (ChromaDB vector store + persistent SQLite sessions)*</sub> | ![System Settings Modal](docs/screenshots/05_system_settings_llm_tts.png)<br><sub>*Multi-provider LLM credentials and universal speech synthesis calibration*</sub> |
+
+<p align="center">
+  <img src="docs/screenshots/04_tsundere_patience_test.png" alt="Dynamic Tsundere Persona & Adaptive Mood" width="880">
+  <br>
+  <em>Adaptive Tsundere persona & dynamic mood shifts — Kurisu playfully questioning the user's repetitive greetings ("Testing my patience")</em>
+</p>
+
 ## 🔬 Overview
 
-**OpenAmadeus Companion** ([lucca3447/amadeus](https://github.com/lucca3447/amadeus)) recreates the digitalized persona and consciousness of neuroscientist **Makise Kurisu** (Viktor Chondria University — Lab 304) using strict natural language system directives, episodic semantic memory retrieval, and synchronized audiovisual rendering across 10+ languages (including native cross-lingual support for **Brazilian Portuguese**, **English**, and **Japanese**).
+**OpenAmadeus Companion** ([lucca3447/OpenAmadeus](https://github.com/lucca3447/OpenAmadeus)) recreates the digitalized persona and consciousness of the neuroscientist character **Makise Kurisu**  using strict natural language system directives, episodic semantic memory retrieval, and synchronized audiovisual rendering.
 
 ### Core Highlights
 
